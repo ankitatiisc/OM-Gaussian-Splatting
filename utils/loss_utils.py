@@ -62,3 +62,7 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 
+def hungarian_loss(gt_masks,pred_masks):
+    # TODO write code for hungarian loss
+    return None
+
