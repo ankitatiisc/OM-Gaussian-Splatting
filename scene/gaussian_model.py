@@ -20,7 +20,7 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-
+from seem_feature import SeemFeatureNetwork
 class GaussianModel:
 
     def setup_functions(self):
@@ -56,7 +56,10 @@ class GaussianModel:
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
+        #Add placeholder for enabling feature branch
+        self.seem_features = SeemFeatureNetwork(depth=4, width=64, inp_dim=128, args=None)
         self.setup_functions()
+        
 
     def capture(self):
         return (
@@ -72,6 +75,8 @@ class GaussianModel:
             self.denom,
             self.optimizer.state_dict(),
             self.spatial_lr_scale,
+            #Add placeholder for enabling feature branch
+            self.seem_features.state_dict()
         )
     
     def restore(self, model_args, training_args):
@@ -86,11 +91,13 @@ class GaussianModel:
         xyz_gradient_accum, 
         denom,
         opt_dict, 
-        self.spatial_lr_scale) = model_args
+        self.spatial_lr_scale,
+        seem_features_dict) = model_args      #Order should be same as capture
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
+        self.seem_features.load_state_dict(seem_features_dict)
 
     @property
     def get_scaling(self):
@@ -145,6 +152,7 @@ class GaussianModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        self.seem_features = self.seem_features.to("cuda")
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
@@ -157,11 +165,16 @@ class GaussianModel:
             {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
+            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
+            {'params': [self.seem_features], 'lr': training_args.rotattraining_args.position_lr_init * self.spatial_lr_scaleion_lr, "name": "f_seem"} #Check if different LR should be assigned
         ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
+                                                    lr_final=training_args.position_lr_final*self.spatial_lr_scale,
+                                                    lr_delay_mult=training_args.position_lr_delay_mult,
+                                                    max_steps=training_args.position_lr_max_steps)
+        self.f_seem_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.  spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
@@ -171,6 +184,10 @@ class GaussianModel:
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
+                param_group['lr'] = lr
+                return lr
+            elif param_group["name"] == "f_seem":
+                lr = self.f_seem_scheduler_args(iteration)
                 param_group['lr'] = lr
                 return lr
 
@@ -188,6 +205,10 @@ class GaussianModel:
             l.append('rot_{}'.format(i))
         return l
 
+    def compute_features(self):
+        #To do : how to call here ??? 
+        temp = 0
+        
     def save_ply(self, path):
         mkdir_p(os.path.dirname(path))
 
