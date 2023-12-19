@@ -31,7 +31,10 @@ class CameraInfo(NamedTuple):
     FovX: np.array
     image: np.array
     image_path: str
+    mask:np.array
+    mask_path:str
     image_name: str
+    mask_flag:bool
     width: int
     height: int
 
@@ -95,11 +98,18 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
+        mask_path = os.path.join(images_folder[:-6],'masks', os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
         image = Image.open(image_path)
-
-        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path, image_name=image_name, width=width, height=height)
+        if os.path.isfile(mask_path):
+            mask = Image.open(mask_path)
+            
+        if not os.path.isfile(mask_path):
+            cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+                              image_path=image_path, image_name=image_name,mask_flag=False, width=width, height=height)
+        else:
+            cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+                              image_path=image_path,mask = mask,mask_path = mask_path, image_name=image_name,mask_flag=True, width=width, height=height)
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
@@ -168,7 +178,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
         pcd = fetchPly(ply_path)
     except:
         pcd = None
-
+    #import pdb;pdb.set_trace()
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,

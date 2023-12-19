@@ -12,7 +12,7 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim ,hungarian_loss
+from utils.loss_utils import l1_loss, ssim ,decomp_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -29,20 +29,37 @@ except ImportError:
     TENSORBOARD_FOUND = False
 
 # importing extra libraries for SEEM
-from xdecoder.BaseModel import BaseModel
-from xdecoder import build_model
-from seem_utils.distributed import init_distributed
-from seem_utils.arguments import load_opt_from_config_files
-from seem_utils.constants import COCO_PANOPTIC_CLASSES
+# commenting temporerly as masks directly taking from input
+# from xdecoder.BaseModel import BaseModel
+# from xdecoder import build_model
+# from seem_utils.distributed import init_distributed
+# from seem_utils.arguments import load_opt_from_config_files
+# from seem_utils.constants import COCO_PANOPTIC_CLASSES
 
 # importing extra libraries for generating masks using SEEM
-from tasks.interactive import interactive_infer_image,interactive_infer_video
+#from tasks.interactive import interactive_infer_image,interactive_infer_video
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,seem_model):
+def decompose_mask(mask):
+    # TODO Doubt 
+    # if we are sending vectors here to gpu ,are we aggregating the new values everytime we are calling function.
+    
+    # Get unique values from the mask
+    unique_values = torch.unique(mask).to(mask.device)
+
+    # Create a dictionary mapping unique values to binary masks
+    masks_dict = {value.item(): (mask == value).float() for value in unique_values}
+
+    # Stack binary masks along a new dimension to create a single tensor
+    binary_masks = torch.stack(list(masks_dict.values()), dim=0).to(mask.device)
+
+    return binary_masks
+
+
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,seem_model,input_args):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians)
+    scene = Scene(dataset, gaussians,max_objects = input_args.max_objects)
     gaussians.training_setup(opt)
     render_object_ins = False
     if checkpoint:
@@ -85,7 +102,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # instead of Two stage , we are trying to do both recontruction and decompostion in one step
         # if this doesnt work we will change it to two steps
-        if(iteration>(opt.iterations//5)+1):
+        if(input_args.decomp and (iteration>(opt.iterations//5)+1)):
             render_object_ins =True
 
         # Pick a random Camera
@@ -102,29 +119,39 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
+        
+        gt_mask = None
         if render_object_ins:
             # TODO write the code
-            # we need generate object mask and decomposed masks from seem
-            audio_model = None
-            tasks = []
-            img_changed =  image.to('cpu').permute(2,0,1)
-            img_changed = trans(img_changed)
+            # for now we dont need this we are directly adding mask from input.
+            # if we are not doing that ,add seem code to get gt_mask.
+            gt_mask = viewpoint_cam.original_image.cuda()
+            decomp_gt_mask = decompose_mask(gt_mask)
+        
 
-            gt_mask = interactive_infer_image(seem_model,audio_model,img_changed,tasks)
-            # TODO write code for gt_mask decomposition and also for render gt_masks
-    
+        # import pdb;pdb.set_trace()
         # Loss
+        #import pdb;pdb.set_trace()
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
 
-        if render_object_ins:
-            # TODO need to write code for loss
-            # for temporary decomposition loss is set to zero
-            # we need to define and add hungarian loss  
-            # vaccume guassian are being deleted so we need to check if we need 3D penalty loss or not.
-            decomposition_loss = loss*0
+        # calling gt_mask and applying loss
+        # genereting pred masks by rendering
+        if render_object_ins and gt_mask is not None:
+            pred_mask = None
+            # TODO comeplte the rendering code for mask generation and decompose the pred mask
+            # TODO need to write code for loss(minor changes)
+            # added decomp_loss.the major part of the loss function code is completed,
+            # there will be some minor changes in code (for mapping shapes) ,we need pred_masks to complete the task.
+
+            # depending on the output of rasterization we may change loss into 2 parts 
+                # IOU Hungarian loss 
+                # pixel wise Hungarian loss
+            # for now code have one(iou+ce) loss, we will change it once we are able to render masks.
+            # just not to get any error gt_mask is assigning for pred_mask
+            pred_mask = gt_mask
+            decomposition_loss = decomp_loss(pred_mask,gt_mask,input_args.max_objects)
             loss = loss + decompostion_loss
 
         loss.backward()
@@ -242,6 +269,8 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument('--decomp', action='store_true', default=False)
+    parser.add_argument('--max_objects', type=int, default=50)
     # argument for SEEM config file.
     parser.add_argument('--conf_files', default="configs/seem/seem_focall_lang.yaml", metavar="FILE", help='path to config file' )
     args = parser.parse_args(sys.argv[1:])
@@ -254,33 +283,36 @@ if __name__ == "__main__":
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     print("Optimizing " + args.model_path)
+    
+    # commenting temporerly as masks directly taking from input
+    
+    
+    # # getting seem opts 
+    # seem_opts = load_opt_from_config_files(opt.conf_files)
+    # seem_opts= init_distributed(seem_opts)
 
-    # getting seem opts 
-    seem_opts = load_opt_from_config_files(opt.conf_files)
-    seem_opts= init_distributed(seem_opts)
+    # # Getting METADATA
+    # cur_model = 'None'
+    # if 'focalt' in opt.conf_files:
+    #     pretrained_pth = os.path.join("seem_focalt_v2.pt")
+    #     if not os.path.exists(pretrained_pth):
+    #         os.system("wget {}".format("https://huggingface.co/xdecoder/SEEM/resolve/main/seem_focalt_v2.pt"))
+    #     cur_model = 'Focal-T'
+    # elif 'focal' in opt.conf_files:
+    #     pretrained_pth = os.path.join("seem_focall_v1.pt")
+    #     if not os.path.exists(pretrained_pth):
+    #         os.system("wget {}".format("https://huggingface.co/xdecoder/SEEM/resolve/main/seem_focall_v1.pt"))
+    #     cur_model = 'Focal-L'
 
-    # Getting METADATA
-    cur_model = 'None'
-    if 'focalt' in opt.conf_files:
-        pretrained_pth = os.path.join("seem_focalt_v2.pt")
-        if not os.path.exists(pretrained_pth):
-            os.system("wget {}".format("https://huggingface.co/xdecoder/SEEM/resolve/main/seem_focalt_v2.pt"))
-        cur_model = 'Focal-T'
-    elif 'focal' in opt.conf_files:
-        pretrained_pth = os.path.join("seem_focall_v1.pt")
-        if not os.path.exists(pretrained_pth):
-            os.system("wget {}".format("https://huggingface.co/xdecoder/SEEM/resolve/main/seem_focall_v1.pt"))
-        cur_model = 'Focal-L'
-
-    seem_model = BaseModel(seem_opts, build_model(seem_opts)).from_pretrained(pretrained_pth).eval().cuda()
-    with torch.no_grad():
-        seem_model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(COCO_PANOPTIC_CLASSES + ["background"], is_eval=True)
+    # seem_model = BaseModel(seem_opts, build_model(seem_opts)).from_pretrained(pretrained_pth).eval().cuda()
+    # with torch.no_grad():
+    #     seem_model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(COCO_PANOPTIC_CLASSES + ["background"], is_eval=True)
 
     
+    seem_model=None
 
 
-
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from,seem_model)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from,seem_model,args)
 
     # All done
     print("\nTraining complete.")

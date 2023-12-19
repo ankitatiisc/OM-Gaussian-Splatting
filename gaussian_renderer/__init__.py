@@ -53,7 +53,12 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     means3D = pc.get_xyz
     means2D = screenspace_points
     opacity = pc.get_opacity
-
+    # TODO write the code to integrate object_ins in ratersization.
+    # it seems for me there is some CUDA involement.need to check the code to get some understanding
+    # OM-Gaussian-Splatting/submodules/diff-gaussian-rasterization/diff_gaussian_rasterization/__init__.py
+    # path for the code where they are implimenting it.
+    # Doubt : do we normalize the object_ins before rastersization or is it ok?
+    object_ins = pc.get_object_ins
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
     scales = None
