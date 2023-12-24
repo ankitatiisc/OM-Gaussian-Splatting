@@ -146,8 +146,9 @@ class GaussianModel:
         opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
         
         
-        object_ins = torch.randint(0, max_objects-1,size=(fused_point_cloud.shape[0],)).float().cuda()
-        
+        object_ins = RGB2SH(torch.rand((fused_point_cloud.shape[0],1), device="cuda"))
+        object_ins = object_ins[:,:,None]
+        import pdb;pdb.set_trace()
         # TODO Need to write code for initilizing object_ins
         # cant do one hot vector as i am using H(notation from dmnerf) as 50 so it is going out off memory.
         # i am generating and stroing in int values not in one hot vector. 
@@ -158,7 +159,7 @@ class GaussianModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
-        self._object_ins = nn.Parameter(object_ins.requires_grad_(True))
+        self._object_ins = nn.Parameter(object_ins.transpose(1, 2).contiguous().requires_grad_(True))
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
@@ -237,6 +238,7 @@ class GaussianModel:
         # Discuss with other if below line is correct to load object ins
         # as opacities and object ins as same shape i just used same code. 
         object_ins = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+       
         features_dc = np.zeros((xyz.shape[0], 3, 1))
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
         features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])

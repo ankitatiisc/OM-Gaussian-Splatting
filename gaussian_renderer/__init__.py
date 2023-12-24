@@ -58,7 +58,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # OM-Gaussian-Splatting/submodules/diff-gaussian-rasterization/diff_gaussian_rasterization/__init__.py
     # path for the code where they are implimenting it.
     # Doubt : do we normalize the object_ins before rastersization or is it ok?
-    object_ins = pc.get_object_ins
+    # object_ins = pc.get_object_ins
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
     scales = None
@@ -73,6 +73,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
     shs = None
+    
     colors_precomp = None
     if override_color is None:
         if pipe.convert_SHs_python:
@@ -83,14 +84,17 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
             shs = pc.get_features
+            sh_objs = pc.get_object_ins
     else:
         colors_precomp = override_color
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, radii = rasterizer(
+    import pdb;pdb.set_trace()
+    rendered_image, radii, rendered_objects = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
+        sh_objs = sh_objs,
         colors_precomp = colors_precomp,
         opacities = opacity,
         scales = scales,
@@ -99,7 +103,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # TODO write code for object_ins rendering
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
+    import pdb;pdb.set_trace()
     return {"render": rendered_image,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
-            "radii": radii}
+            "radii": radii,
+            "render_object": rendered_objects}
