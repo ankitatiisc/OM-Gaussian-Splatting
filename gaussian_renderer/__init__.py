@@ -53,14 +53,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     means3D = pc.get_xyz
     means2D = screenspace_points
     opacity = pc.get_opacity
-    # TODO write the code to integrate object_ins in ratersization.
-    # it seems for me there is some CUDA involement.need to check the code to get some understanding
-    # OM-Gaussian-Splatting/submodules/diff-gaussian-rasterization/diff_gaussian_rasterization/__init__.py
-    # path for the code where they are implimenting it.
-    # Doubt : do we normalize the object_ins before rastersization or is it ok?
-    # object_ins = pc.get_object_ins
-    # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
-    # scaling / rotation by the rasterizer.
+  
     scales = None
     rotations = None
     cov3D_precomp = None
@@ -89,7 +82,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         colors_precomp = override_color
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    import pdb;pdb.set_trace()
     rendered_image, radii, rendered_objects = rasterizer(
         means3D = means3D,
         means2D = means2D,
@@ -100,10 +92,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         scales = scales,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp)
-    # TODO write code for object_ins rendering
-    # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
-    # They will be excluded from value updates used in the splitting criteria.
-    import pdb;pdb.set_trace()
     return {"render": rendered_image,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,

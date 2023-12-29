@@ -39,29 +39,14 @@ except ImportError:
 # importing extra libraries for generating masks using SEEM
 #from tasks.interactive import interactive_infer_image,interactive_infer_video
 
-def decompose_mask(mask):
-    # TODO Doubt 
-    # if we are sending vectors here to gpu ,are we aggregating the new values everytime we are calling function.
-    
-    # Get unique values from the mask
-    unique_values = torch.unique(mask).to(mask.device)
-
-    # Create a dictionary mapping unique values to binary masks
-    masks_dict = {value.item(): (mask == value).float() for value in unique_values}
-
-    # Stack binary masks along a new dimension to create a single tensor
-    binary_masks = torch.stack(list(masks_dict.values()), dim=0).to(mask.device)
-
-    return binary_masks
-
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,seem_model,input_args):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
-    gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians,max_objects = input_args.max_objects)
+    gaussians = GaussianModel(dataset.sh_degree,max_objects = input_args.max_objects)
+    scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
-    render_object_ins = False
+    render_object_ins = True
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
@@ -117,43 +102,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
-        import pdb;pdb.set_trace()
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg) 
         image, viewspace_point_tensor, visibility_filter, radii,decomp_objs = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"],render_pkg["render_object"]
         
-        gt_mask = None
-        if render_object_ins:
-            # TODO write the code
-            # for now we dont need this we are directly adding mask from input.
-            # if we are not doing that ,add seem code to get gt_mask.
-            gt_mask = viewpoint_cam.original_image.cuda()
-            decomp_gt_mask = decompose_mask(gt_mask)
-        
-
-        # import pdb;pdb.set_trace()
         # Loss
-        #import pdb;pdb.set_trace()
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
 
         # calling gt_mask and applying loss
-        # genereting pred masks by rendering
+        # genereted pred masks by rendering
+        gt_mask = None
         if render_object_ins and gt_mask is not None:
-            pred_mask = None
-            # TODO comeplte the rendering code for mask generation and decompose the pred mask
-            # TODO need to write code for loss(minor changes)
-            # added decomp_loss.the major part of the loss function code is completed,
-            # there will be some minor changes in code (for mapping shapes) ,we need pred_masks to complete the task.
-
-            # depending on the output of rasterization we may change loss into 2 parts 
-                # IOU Hungarian loss 
-                # pixel wise Hungarian loss
-            # for now code have one(iou+ce) loss, we will change it once we are able to render masks.
-            # just not to get any error gt_mask is assigning for pred_mask
-            pred_mask = gt_mask
-            decomposition_loss = decomp_loss(pred_mask,gt_mask,input_args.max_objects)
-            loss = loss + decompostion_loss
+            #TODO Discuss
+            # Check if we can improve loss function for better 3D consistent masks
+            # Do we need penalty loss 
+            gt_mask = viewpoint_cam.original_mask.cuda()
+            temp_gt_mask = gt_mask.view(-1) # shape [H*W]
+            temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
+            decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)
+            loss = loss + decomposition_loss
 
         loss.backward()
 

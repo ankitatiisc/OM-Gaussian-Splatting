@@ -27,7 +27,6 @@ def rasterize_gaussians(
     cov3Ds_precomp,
     raster_settings,
 ):
-    import pdb;pdb.set_trace()
     return _RasterizeGaussians.apply(
         means3D,
         means2D,
@@ -175,9 +174,7 @@ class GaussianRasterizationSettings(NamedTuple):
 class GaussianRasterizer(nn.Module):
     def __init__(self, raster_settings):
         super().__init__()
-        import pdb;pdb.set_trace()
         self.raster_settings = raster_settings
-        
 
     def markVisible(self, positions):
         # Mark visible points (based on frustum culling for camera) with a boolean 
@@ -190,8 +187,7 @@ class GaussianRasterizer(nn.Module):
             
         return visible
 
-    def forward(self, means3D, means2D, opacities, shs = None, sh_objs = None, colors_precomp = None, scales = None, rotations = None, cov3D_precomp = None):
-        import pdb;pdb.set_trace()
+    def forward(self, means3D, means2D, opacities, shs = None, sh_objs = None, colors_precomp = None, scales = None, rotations = None, cov3D_precomp = None):     
         raster_settings = self.raster_settings
 
         if (shs is None and colors_precomp is None) or (shs is not None and colors_precomp is not None):
