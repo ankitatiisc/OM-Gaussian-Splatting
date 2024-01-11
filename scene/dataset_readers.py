@@ -219,8 +219,8 @@ def readCamerasFromTransforms(path, transformsfile, white_background,dataset_nam
 
     with open(os.path.join(path, transformsfile)) as json_file:
         contents = json.load(json_file)
-        #fovx = contents["camera_angle_x"]
-        fovx = contents['fl_x']
+        fovx = contents["camera_angle_x"]
+        #fovx = contents['fl_x']
         frames = contents["frames"]
         if load_360:
             # To load 360 circle poses 
@@ -228,7 +228,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background,dataset_nam
 
     
         for idx, frame in enumerate(frames):
-            cam_name = os.path.join(path, frame["file_path"] )
+            cam_name = os.path.join(path, frame["file_path"] + extension)
             mask_flag =True
             if(dataset_name == 'dmnerf'):
                 if(frame["file_path"][0] is 't'):
