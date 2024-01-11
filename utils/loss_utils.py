@@ -13,7 +13,8 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 from math import exp
-
+import numpy as np
+from scipy.optimize import linear_sum_assignment
 def l1_loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
 
@@ -33,7 +34,7 @@ def create_window(window_size, channel):
 def ssim(img1, img2, window_size=11, size_average=True):
     channel = img1.size(-3)
     window = create_window(window_size, channel)
-
+    
     if img1.is_cuda:
         window = window.cuda(img1.get_device())
     window = window.type_as(img1)
@@ -61,4 +62,62 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
         return ssim_map.mean()
     else:
         return ssim_map.mean(1).mean(1).mean(1)
+
+
+def decomp_loss(pred_ins, gt_labels, ins_num):
+    # change label to one hot
+    valid_gt_labels = torch.unique(gt_labels)
+    gt_ins = torch.zeros(size=(gt_labels.shape[0], ins_num))
+
+    valid_ins_num = len(valid_gt_labels)
+    gt_ins[..., :valid_ins_num] = F.one_hot(gt_labels.long())[..., valid_gt_labels.long()]
+
+    cost_ce, cost_siou, order_row, order_col = hungarian(pred_ins, gt_ins, valid_ins_num, ins_num)
+    valid_ce = torch.mean(cost_ce[order_row, order_col[:valid_ins_num]])
+    
+    if not (len(order_col) == valid_ins_num):
+        invalid_ce = torch.mean(pred_ins[:, order_col[valid_ins_num:]])
+    else:
+        invalid_ce = torch.tensor([0]).to(pred_ins.device)
+    valid_siou = torch.mean(cost_siou[order_row, order_col[:valid_ins_num]])
+
+    ins_loss_sum = valid_ce + invalid_ce + valid_siou
+    return ins_loss_sum
+
+
+# matching function
+def hungarian(pred_ins, gt_ins, valid_ins_num, ins_num):
+    @torch.no_grad()
+    def reorder(cost_matrix, valid_ins_num):
+        valid_scores = cost_matrix[:valid_ins_num]
+        valid_scores = valid_scores.cpu().numpy()
+        valid_scores = np.nan_to_num(valid_scores, nan=20.0)
+        
+        row_ind, col_ind = linear_sum_assignment(valid_scores)      
+        unmapped = ins_num - valid_ins_num
+        if unmapped > 0:
+            unmapped_ind = np.array(list(set(range(ins_num)) - set(col_ind)))
+            col_ind = np.concatenate([col_ind, unmapped_ind])
+        return row_ind, col_ind
+    # preprocess prediction and ground truth
+    pred_ins = pred_ins.permute([1, 0])
+    gt_ins = gt_ins.permute([1, 0])
+    pred_ins = pred_ins[None, :, :]
+    gt_ins = gt_ins[:, None, :].to(pred_ins.device)
+    # import pdb;pdb.set_trace()
+    cost_ce = torch.mean(-gt_ins * torch.log(pred_ins + 1e-8) - (1 - gt_ins) * torch.log(1 - pred_ins + 1e-8), dim=-1)
+
+    # get soft iou score between prediction and ground truth, don't need do mean operation
+    TP = torch.sum(pred_ins * gt_ins, dim=-1)
+    FP = torch.sum(pred_ins, dim=-1) - TP
+    FN = torch.sum(gt_ins, dim=-1) - TP
+    cost_siou = TP / (TP + FP + FN + 1e-6)
+    cost_siou = 1.0 - cost_siou
+
+    # final score
+    cost_matrix = cost_ce + cost_siou
+    order_row, order_col = reorder(cost_matrix, valid_ins_num)
+
+    return cost_ce, cost_siou, order_row, order_col
+
 

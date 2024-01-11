@@ -11,7 +11,7 @@
 
 from scene.cameras import Camera
 import numpy as np
-from utils.general_utils import PILtoTorch
+from utils.general_utils import PILtoTorch,PILtoTorchformask
 from utils.graphics_utils import fov2focal
 
 WARNED = False
@@ -35,17 +35,24 @@ def loadCam(args, id, cam_info, resolution_scale):
         else:
             global_down = orig_w / args.resolution
 
-        scale = float(global_down) * float(resolution_scale)
+        scale = float(global_down) * float(resolution_scale)*2
         resolution = (int(orig_w / scale), int(orig_h / scale))
 
     resized_image_rgb = PILtoTorch(cam_info.image, resolution)
-
+    
+    if(cam_info.mask_flag):
+        resized_mask_rgb = PILtoTorchformask(cam_info.mask, resolution)
+        gt_mask = resized_mask_rgb[0]
     gt_image = resized_image_rgb[:3, ...]
     loaded_mask = None
 
-    if resized_image_rgb.shape[1] == 4:
+    if resized_image_rgb.shape[0] == 4:
         loaded_mask = resized_image_rgb[3:4, ...]
-
+    if(cam_info.mask_flag):
+        return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
+                  FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
+                  image=gt_image, gt_alpha_mask=loaded_mask,
+                  image_name=cam_info.image_name, uid=id, data_device=args.data_device,mask = gt_mask,mask_flag = True)
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
                   image=gt_image, gt_alpha_mask=loaded_mask,
