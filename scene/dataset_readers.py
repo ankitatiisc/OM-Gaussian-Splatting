@@ -22,6 +22,34 @@ from pathlib import Path
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
+from scipy.spatial.transform import Slerp, Rotation
+import torch
+trans_t = lambda t: torch.Tensor([
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, t],
+    [0, 0, 0, 1]]).float()
+
+rot_phi = lambda phi: torch.Tensor([
+    [1, 0, 0, 0],
+    [0, np.cos(phi), -np.sin(phi), 0],
+    [0, np.sin(phi), np.cos(phi), 0],
+    [0, 0, 0, 1]]).float()
+
+rot_theta = lambda th: torch.Tensor([
+    [np.cos(th), 0, -np.sin(th), 0],
+    [0, 1, 0, 0],
+    [np.sin(th), 0, np.cos(th), 0],
+    [0, 0, 0, 1]]).float()
+
+def pose_spherical(theta, phi, radius):
+    c2w = trans_t(radius)
+    c2w = rot_phi(phi / 180. * np.pi) @ c2w
+    c2w = rot_theta(theta / 180. * np.pi) @ c2w
+    c2w = torch.Tensor(np.array([[-1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])) @ c2w
+    
+    return np.array(c2w)
+
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -186,19 +214,40 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
                            ply_path=ply_path)
     return scene_info
 
-def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png"):
+def readCamerasFromTransforms(path, transformsfile, white_background,dataset_name,load_360, extension=".png"):
     cam_infos = []
 
     with open(os.path.join(path, transformsfile)) as json_file:
         contents = json.load(json_file)
-        fovx = contents["camera_angle_x"]
-
+        #fovx = contents["camera_angle_x"]
+        fovx = contents['fl_x']
         frames = contents["frames"]
+        if load_360:
+            # To load 360 circle poses 
+            poses = np.stack([pose_spherical(angle, -65.0, 7.0) for angle in np.linspace(0, 180, len(frames))], 0)
+
+    
         for idx, frame in enumerate(frames):
-            cam_name = os.path.join(path, frame["file_path"] + extension)
+            cam_name = os.path.join(path, frame["file_path"] )
+            mask_flag =True
+            if(dataset_name == 'dmnerf'):
+                if(frame["file_path"][0] is 't'):
+                    mask_path = os.path.join(path,'train/semantic_instance/semantic_instance_'+frame["file_path"][-4:]+extension)
+                else:
+                    mask_path = os.path.join(path,'val/semantic_instance/semantic_instance_'+frame["file_path"][-4:]+extension)
+            elif(dataset_name == 'scannet'):
+                mask_path = os.path.join(path,frame["file_path"]+'.instance-filt'+extension)
+            else:
+                mask_path = ''
+
 
             # NeRF 'transform_matrix' is a camera-to-world transform
-            c2w = np.array(frame["transform_matrix"])
+            if(load_360):
+                c2w = poses[idx]
+            else:
+                c2w = np.array(frame["transform_matrix"])
+            
+          
             # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
             c2w[:3, 1:3] *= -1
 
@@ -208,11 +257,19 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             T = w2c[:3, 3]
 
             image_path = os.path.join(path, cam_name)
+            
             image_name = Path(cam_name).stem
+            
             image = Image.open(image_path)
-
+            if(mask_path==''):
+                mask =None
+                mask_flag = False
+            else:
+                mask = Image.open(mask_path)
+                
+        
             im_data = np.array(image.convert("RGBA"))
-
+            
             bg = np.array([1,1,1]) if white_background else np.array([0, 0, 0])
 
             norm_data = im_data / 255.0
@@ -224,15 +281,19 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             FovX = fovx
 
             cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                            image_path=image_path, image_name=image_name, width=image.size[0], height=image.size[1]))
+                            image_path=image_path, mask=mask,mask_path =mask_path ,image_name=image_name,mask_flag=mask_flag, width=image.size[0], height=image.size[1]))
             
     return cam_infos
 
-def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
+def readNerfSyntheticInfo(path, white_background, eval,dataset_name,load_360=False, extension=".png"):
     print("Reading Training Transforms")
-    train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
-    print("Reading Test Transforms")
-    test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
+    if(dataset_name=='replica'):
+        train_cam_infos = readCamerasFromTransforms(path, "transforms.json", white_background,dataset_name, load_360,extension)
+        test_cam_infos = readCamerasFromTransforms(path, "transforms.json", white_background,dataset_name, load_360,extension)
+    else:
+        train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background,dataset_name, load_360,extension)
+        print("Reading Test Transforms")
+        test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background,dataset_name, load_360,extension)
     
     if not eval:
         train_cam_infos.extend(test_cam_infos)

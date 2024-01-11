@@ -46,7 +46,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     gaussians = GaussianModel(dataset.sh_degree,max_objects = input_args.max_objects)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
-    render_object_ins = True
+    
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
@@ -87,8 +87,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # instead of Two stage , we are trying to do both recontruction and decompostion in one step
         # if this doesnt work we will change it to two steps
-        if(input_args.decomp and (iteration>(opt.iterations//5)+1)):
-            render_object_ins =True
+        
 
         # Pick a random Camera
         if not viewpoint_stack:
@@ -112,13 +111,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # calling gt_mask and applying loss
         # genereted pred masks by rendering
-        gt_mask = None
-        if render_object_ins and gt_mask is not None:
+        gt_mask = viewpoint_cam.original_mask
+        if gt_mask is not None:
             #TODO Discuss
             # Check if we can improve loss function for better 3D consistent masks
             # Do we need penalty loss 
-            gt_mask = viewpoint_cam.original_mask.cuda()
-            temp_gt_mask = gt_mask.view(-1) # shape [H*W]
+           
+            gt_mask = gt_mask.cuda()
+            temp_gt_mask = gt_mask.view(-1) # shape [H*W]     
             temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
             decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)
             loss = loss + decomposition_loss
@@ -141,6 +141,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
+                if(input_args.save_decomp):
+                    print("\n[ITER {}] Saving decomposed Gaussians".format(iteration))
+                    scene.save_decomp(iteration)
 
             # Densification
             if iteration < opt.densify_until_iter:
@@ -234,12 +237,13 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000,60_000,90_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument('--decomp', action='store_true', default=False)
     parser.add_argument('--max_objects', type=int, default=50)
+    parser.add_argument('--save_decomp',action='store_true',default=False)
     # argument for SEEM config file.
     parser.add_argument('--conf_files', default="configs/seem/seem_focall_lang.yaml", metavar="FILE", help='path to config file' )
     args = parser.parse_args(sys.argv[1:])

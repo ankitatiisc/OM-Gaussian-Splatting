@@ -424,3 +424,123 @@ class GaussianModel:
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
+    
+    
+    def save_decomp_ply(self,path, _xyz,_features_dc,_features_rest,_opacity,_scaling,_rotation,_object_ins):
+        mkdir_p(os.path.dirname(path))
+
+        xyz = _xyz.detach().cpu().numpy()
+        normals = np.zeros_like(xyz)
+        f_dc = _features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        f_rest = _features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        opacities = _opacity.detach().cpu().numpy()
+        scale = _scaling.detach().cpu().numpy()
+        rotation = _rotation.detach().cpu().numpy()
+        object_ins = _object_ins.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+
+        elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation,object_ins), axis=1)
+        elements[:] = list(map(tuple, attributes))
+        el = PlyElement.describe(elements, 'vertex')
+        PlyData([el]).write(path)
+    
+    def save_decomp_plys(self,path):
+        mkdir_p(os.path.dirname(path))
+        object_idxs =  torch.argmax(self._object_ins,dim=1)[...,0]
+        unique_objects = torch.unique(object_idxs)
+
+        for idx in unique_objects:
+            path_idx = os.path.join(path , f'_{idx}.ply')
+            obj_idx_flag =  object_idxs==idx
+            _xyz= self._xyz[obj_idx_flag] 
+            _features_dc   =self._features_dc[obj_idx_flag]
+            _features_rest =self._features_rest[obj_idx_flag]
+            _opacity =self._opacity[obj_idx_flag]
+            _scaling  =self._scaling[obj_idx_flag]
+            _rotation  =self._rotation[obj_idx_flag]
+            _object_ins =self._object_ins[obj_idx_flag]
+            self.save_decomp_ply(path_idx, _xyz,_features_dc,_features_rest,_opacity,_scaling,_rotation,_object_ins)
+    
+    def load_obj_ply(self, path):
+        plydata = PlyData.read(path)
+
+        xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
+                        np.asarray(plydata.elements[0]["y"]),
+                        np.asarray(plydata.elements[0]["z"])),  axis=1)
+        opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+        
+       
+        features_dc = np.zeros((xyz.shape[0], 3, 1))
+        features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
+        features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
+        features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
+
+        extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
+        extra_f_names = sorted(extra_f_names, key = lambda x: int(x.split('_')[-1]))
+        assert len(extra_f_names)==3*(self.max_sh_degree + 1) ** 2 - 3
+        features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
+        for idx, attr_name in enumerate(extra_f_names):
+            features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
+        features_extra = features_extra.reshape((features_extra.shape[0], 3, (self.max_sh_degree + 1) ** 2 - 1))
+
+        scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
+        scale_names = sorted(scale_names, key = lambda x: int(x.split('_')[-1]))
+        scales = np.zeros((xyz.shape[0], len(scale_names)))
+        for idx, attr_name in enumerate(scale_names):
+            scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+        rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
+        rot_names = sorted(rot_names, key = lambda x: int(x.split('_')[-1]))
+        rots = np.zeros((xyz.shape[0], len(rot_names)))
+        for idx, attr_name in enumerate(rot_names):
+            rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        object_ins = np.zeros((xyz.shape[0], self.num_objects, 1))
+        for idx in range(self.num_objects):
+            object_ins[:,idx,0] = np.asarray(plydata.elements[0]["object_ins_"+str(idx)])
+        return xyz, features_dc, features_extra, opacities, scales,rots,object_ins
+    
+    def load_ply_from_decomp(self,path):
+        decomp_plys  = os.listdir(path)
+        decomp_plys = sorted(decomp_plys)
+        _xyz, _features_dc, _features_extra, _opacities, _scales,_rots,_object_ins = None,None,None,None,None,None,None
+        for decomp_ply in decomp_plys:
+            decomp_ply_path = os.path.join(path,decomp_ply)
+            xyz, features_dc, features_extra, opacities, scales,rots,object_ins = self.load_obj_ply(decomp_ply_path)
+            if(decomp_ply =='_1.ply' or decomp_ply =='_11 copy.ply' ):
+                xyz = xyz+ [0,-0.6,0]
+           
+            if _xyz is not None:
+                _xyz = np.concatenate((_xyz, xyz), axis=0)
+                _features_dc = np.concatenate((_features_dc, features_dc), axis=0)
+                _features_extra = np.concatenate((_features_extra, features_extra), axis=0)
+                _opacities = np.concatenate((_opacities, opacities), axis=0)
+                _scales = np.concatenate((_scales, scales), axis=0)
+                _rots = np.concatenate((_rots, rots), axis=0)
+                _object_ins = np.concatenate((_object_ins, object_ins), axis=0)
+            else:
+                _xyz = xyz
+                _features_dc = features_dc
+                _features_extra =  features_extra
+                _opacities = opacities
+                _scales = scales
+                _rots = rots
+                _object_ins = object_ins
+
+        self._xyz = nn.Parameter(torch.tensor(_xyz, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._features_dc = nn.Parameter(torch.tensor(_features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_rest = nn.Parameter(torch.tensor(_features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
+        self._opacity = nn.Parameter(torch.tensor(_opacities, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._scaling = nn.Parameter(torch.tensor(_scales, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._rotation = nn.Parameter(torch.tensor(_rots, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._object_ins = nn.Parameter(torch.tensor(_object_ins, dtype=torch.float, device="cuda").requires_grad_(True))
+        self.active_sh_degree = self.max_sh_degree
+        return 
+
+        
+
+
+    def manipulation(self):
+        #import pdb;pdb.set_trace()
+        return
