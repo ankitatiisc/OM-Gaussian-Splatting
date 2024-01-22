@@ -102,6 +102,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, masks_folde
         mask_files = os.listdir(masks_folder)
         mask_files = (natsort.natsorted(mask_files,reverse=False))
 
+        mask_files = mask_files[0::5]
+
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
