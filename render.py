@@ -22,6 +22,77 @@ from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
 from utils.system_utils import mkdir_p
+import torch
+from sklearn.cluster import KMeans
+import numpy as np
+import matplotlib.pyplot as plt
+
+def save_rgb_masks(file_paths,image_array):
+    for i, file_path in enumerate(file_paths):
+        image_data = image_array[i]  # Assuming the order in file_paths corresponds to image_array
+
+        # Save the image using OpenCV
+        cv2.imwrite(file_path, image_data*225)
+    return
+
+def get_rgb_masks(image_tensor,feature_tensor):
+    num_images = image_tensor.shape[0]
+    image_flat = image_tensor.view(num_images, -1, 3).cpu().numpy()
+    feature_flat = feature_tensor.view(num_images, -1, 8).cpu().numpy()
+
+    # Perform k-means clustering on the feature vectors for each image
+    num_clusters = 6  # You can adjust this based on the number of clusters you want
+    cluster_labels_all_images = []
+
+    for i in range(num_images):
+        kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+        cluster_labels = kmeans.fit_predict(feature_flat[i])
+        cluster_labels_all_images.append(cluster_labels)
+
+    # Create a colormap for visualization
+    cmap = plt.get_cmap('tab10')
+    
+    # Assign consistent unique colors to each cluster across all images
+    colored_images = np.zeros_like(image_flat, dtype=np.float32)
+    for cluster_id in range(num_clusters):
+        mask = np.array(cluster_labels_all_images) == cluster_id
+        colored_images[ mask, :] = cmap(cluster_id)[:3]
+   
+    # Reshape the colored images back to the shape of the original images
+    colored_images = colored_images.reshape(image_tensor.shape)
+    return colored_images
+def get_rgb_mask(image_tensor,feature_tensor):
+
+    image_pixels = image_tensor.view(-1, 3)
+
+    # Reshape the feature tensor to [num_pixels, num_features]
+    feature_vector = feature_tensor.view(-1, 8)
+
+    # Convert tensors to NumPy arrays
+    image_pixels_np = image_pixels.cpu().numpy()
+    feature_vector_np = feature_vector.cpu().numpy()
+
+    # Perform k-means clustering on the feature vectors
+    num_clusters = 6  # You can adjust the number of clusters as needed
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+    labels = kmeans.fit_predict(feature_vector_np)
+    # import pdb;pdb.set_trace()
+    # Reshape the labels to match the original image shape
+    cluster_labels = labels.reshape(image_pixels_np.shape[:1])
+
+    # Create a color map for visualization
+    cmap = plt.get_cmap('tab10')
+
+    # Assign unique colors to each cluster
+    colored_image = np.zeros_like(image_pixels_np, dtype=np.float32)
+    for cluster_id in range(num_clusters):
+        mask = (cluster_labels == cluster_id)
+        colored_image[mask] = cmap(cluster_id)[:3]
+
+    # Reshape the colored image back to the shape of the original image
+    colored_image = colored_image.reshape(image_tensor.shape)
+    return colored_image
+
 def images_to_video(image_folder, video_name, fps=20):
     images =sorted( [img for img in os.listdir(image_folder) if img.endswith(".png") or img.endswith(".jpg")])
     
@@ -44,16 +115,29 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(gts_path, exist_ok=True)
     makedirs(mask_path, exist_ok=True)
     makedirs(video_path, exist_ok=True)
+    masks = []
+    paths = []
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         render_output = render(view, gaussians, pipeline, background)
         rendering = render_output["render"]
         rendered_object = render_output['render_object'] # shape [O,H,W] O-no of objects
-        rendered_object= torch.argmax(rendered_object,dim=0) # shape [H,W]
+        # import pdb;pdb.set_trace()
+        masks.append(rendered_object.permute(1,2,0))
+        paths.append(os.path.join(mask_path, '{0:05d}'.format(idx) + ".png"))
+        # rendered_object = get_rgb_mask(rendering.permute(1,2,0),rendered_object.permute(1,2,0))
+        # rendered_object= torch.argmax(rendered_object,dim=0) # shape [H,W]
+        
         gt = view.original_image[0:3, :, :]
        
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-        save_as_rgb_masks(rendered_object, os.path.join(mask_path, '{0:05d}'.format(idx) + ".png"))
+        # save_as_rgb_masks(rendered_object, os.path.join(mask_path, '{0:05d}'.format(idx) + ".png"))
+        # cv2.imwrite(os.path.join(mask_path, '{0:05d}'.format(idx) + ".png"),rendered_object*225)
+    import pdb;pdb.set_trace()
+    x = torch.stack(masks,dim=0)
+    rendered_objects = get_rgb_masks(x[...,:3],x)
+    import pdb;pdb.set_trace()
+    save_rgb_masks(paths,rendered_objects)
     images_to_video(render_path,os.path.join(video_path, f'{name}_rgb.mp4') )
     images_to_video(mask_path,os.path.join(video_path,f'{name}_mask.mp4') )
     

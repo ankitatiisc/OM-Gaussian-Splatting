@@ -12,7 +12,7 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim ,decomp_loss
+from utils.loss_utils import l1_loss, ssim ,decomp_loss,contrastive_loss,contrast_loss,ae_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -22,6 +22,7 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+import torch.nn.functional as F
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -119,8 +120,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
            
             gt_mask = gt_mask.cuda()
             temp_gt_mask = gt_mask.view(-1) # shape [H*W]     
+            
             temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
-            decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)
+            # temp_gt_masks = F.one_hot(temp_gt_mask.long())
+            
+            decomposition_loss = ae_loss(temp_pred_mask,temp_gt_mask)
+            
+            #decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)
             loss = loss + decomposition_loss
 
         loss.backward()

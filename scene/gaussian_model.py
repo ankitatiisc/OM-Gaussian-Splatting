@@ -542,5 +542,5 @@ class GaussianModel:
 
 
     def manipulation(self):
-        #import pdb;pdb.set_trace()
+        import pdb;pdb.set_trace()
         return
