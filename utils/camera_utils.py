@@ -35,7 +35,7 @@ def loadCam(args, id, cam_info, resolution_scale):
         else:
             global_down = orig_w / args.resolution
 
-        scale = float(global_down) * float(resolution_scale)*2
+        scale = float(global_down) * float(resolution_scale)
         resolution = (int(orig_w / scale), int(orig_h / scale))
 
     resized_image_rgb = PILtoTorch(cam_info.image, resolution)

@@ -40,10 +40,13 @@ class Scene:
         self.test_cameras = {}
 
         if os.path.exists(os.path.join(args.source_path, "sparse")):
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval,load_360)
+            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval,args.dataset)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")) or os.path.exists(os.path.join(args.source_path, "transforms.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval,args.dataset,load_360)
+        elif os.path.exists(os.path.join(args.source_path, "metadata.json")):
+            print("Found metadata.json file, assuming MOS data set!")
+            scene_info = sceneLoadTypeCallbacks["MOS"](args.source_path, args.white_background, args.eval,args.dataset,load_360)
         else:
             assert False, "Could not recognize scene type!"
 
@@ -74,7 +77,7 @@ class Scene:
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
         if self.loaded_iter:
-            if model_path is not None:
+            if model_path is not None:# if you are loading from decomposed objects.
                 self.gaussians.load_ply(model_path)
             else:
                 self.gaussians.load_ply(os.path.join(self.model_path,

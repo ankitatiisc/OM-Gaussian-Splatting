@@ -153,9 +153,6 @@ def safe_state(silent):
     torch.cuda.set_device(torch.device("cuda:0"))
 
 
-
-
-
 def hex_to_rgb(value):
     value = value.lstrip('#')
     lv = len(value)

@@ -120,6 +120,8 @@ class GaussianModel:
         return self.opacity_activation(self._opacity)
     @property
     def get_object_ins(self):
+        # if you want to apply sigmoid after Rasterization uncomment below line and comment after line.
+        # return self._object_ins
         return self.opacity_activation(self._object_ins)
     
     def get_covariance(self, scaling_modifier = 1):
@@ -445,6 +447,7 @@ class GaussianModel:
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
     
+    # To save each object separately
     def save_decomp_plys(self,path):
         mkdir_p(os.path.dirname(path))
         object_idxs =  torch.argmax(self._object_ins,dim=1)[...,0]
@@ -501,6 +504,7 @@ class GaussianModel:
             object_ins[:,idx,0] = np.asarray(plydata.elements[0]["object_ins_"+str(idx)])
         return xyz, features_dc, features_extra, opacities, scales,rots,object_ins
     
+    # To load the model from decomposed objects/scene.
     def load_ply_from_decomp(self,path):
         decomp_plys  = os.listdir(path)
         decomp_plys = sorted(decomp_plys)
@@ -540,7 +544,7 @@ class GaussianModel:
 
         
 
-
+    # if you want to manipulate objects you can do here.
     def manipulation(self):
         import pdb;pdb.set_trace()
         return
