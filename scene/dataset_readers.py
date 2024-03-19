@@ -258,7 +258,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background,dataset_nam
         fovx = contents["camera_angle_x"]
         #fovx = contents['fl_x']
         frames = contents["frames"]
-        load_360=True
+        load_360=False
         if load_360:
             # To load 360 circle poses 
             poses = np.stack([pose_spherical(angle, -65.0, 7.0) for angle in np.linspace(0, 180, len(frames))], 0)
@@ -270,7 +270,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background,dataset_nam
             mask_path =''
             if(dataset_name == 'dmnerf'):
                 if(frame["file_path"][0] is 't'):
-                    mask_path = os.path.join(path,'train/semantic_maps/semantic_instance_'+frame["file_path"][-4:]+extension)
+                    mask_path = os.path.join(path,'train/semantic_instance/semantic_instance_'+frame["file_path"][-4:]+extension)
                 else:
                     mask_path = os.path.join(path,'val/semantic_instance/semantic_instance_'+frame["file_path"][-4:]+extension)
             elif(dataset_name == 'scannet'):

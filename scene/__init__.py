@@ -17,7 +17,7 @@ from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
-
+import torch
 class Scene:
 
     gaussians : GaussianModel
@@ -38,7 +38,7 @@ class Scene:
 
         self.train_cameras = {}
         self.test_cameras = {}
-
+        # import pdb;pdb.set_trace()
         if os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval,args.dataset)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")) or os.path.exists(os.path.join(args.source_path, "transforms.json")):
@@ -84,13 +84,14 @@ class Scene:
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
+                
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
-
+        torch.save(self.gaussians.grid_mlp.state_dict(), os.path.join(point_cloud_path, "grid_mlp.pth"))
     def save_decomp(self,iteration):
         point_cloud_path = os.path.join(self.model_path, "decomp_objs/iteration_{}".format(iteration))
         self.gaussians.save_decomp_plys(point_cloud_path)

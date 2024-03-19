@@ -95,6 +95,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image)
         
         gt_mask = viewpoint_cam.original_mask
+        # import pdb;pdb.set_trace()
         if gt_mask is not None:
     
             gt_mask = gt_mask.cuda()
@@ -125,6 +126,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
+                
                 if(input_args.save_decomp):
                     print("\n[ITER {}] Saving decomposed Gaussians".format(iteration))
                     scene.save_decomp(iteration)

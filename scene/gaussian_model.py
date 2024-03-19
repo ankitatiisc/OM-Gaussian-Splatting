@@ -20,8 +20,51 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
+from gridencoder import GridEncoder
+import  torch.nn.functional as F 
+import torch.nn.init as init
+        
+class MLP(nn.Module):
+    def __init__(self, dim_in, dim_out, dim_hidden, num_layers, bias=True):
+        super().__init__()
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        self.dim_hidden = dim_hidden
+        self.num_layers = num_layers
+
+        net = []
+        for l in range(num_layers):
+            # net.append(nn.Linear(self.dim_in if l == 0 else self.dim_hidden, self.dim_out if l == num_layers - 1 else self.dim_hidden, bias=bias))
+            linear_layer = nn.Linear(self.dim_in if l == 0 else self.dim_hidden, 
+                                     self.dim_out if l == num_layers - 1 else self.dim_hidden, 
+                                     bias=bias)
+            # Initialize weights to zero
+            init.constant_(linear_layer.weight, 0)
+            if bias:
+                init.constant_(linear_layer.bias, 0)
+            
+            net.append(linear_layer)
+        self.net = nn.ModuleList(net)
+    
+    def forward(self, x):
+        for l in range(self.num_layers):
+            x = self.net[l](x)
+            if l != self.num_layers - 1:
+                x = F.relu(x, inplace=True)
+
+        x = torch.sigmoid(x)
+        return x
+    def get_mlp_parameters(self):
+        parameter_list = []
+        for name, param in self.named_parameters():
+            if  "grid" not in name:
+                parameter_list.append(param)
+        return parameter_list
+
 
 class GaussianModel:
+
+    
 
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
@@ -37,7 +80,8 @@ class GaussianModel:
 
         self.opacity_activation = torch.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
-
+        self.grid= GridEncoder(input_dim=3, num_levels=16, level_dim=2, base_resolution=16, log2_hashmap_size=19, desired_resolution=2048, gridtype='hash', align_corners=False, interpolation='linear')
+        self.grid = self.grid.to('cuda')
         self.rotation_activation = torch.nn.functional.normalize
 
 
@@ -60,7 +104,7 @@ class GaussianModel:
         self.num_objects = max_objects
         
         self.setup_functions()
-
+        self.grid_mlp = MLP(self.grid.output_dim,self.num_objects, 64, 3, bias=False).to('cuda')
     def capture(self):
         return (
             self.active_sh_degree,
@@ -74,6 +118,7 @@ class GaussianModel:
             self.max_radii2D,
             self.xyz_gradient_accum,
             self.denom,
+            self.grid_mlp.state_dict(),
             self.optimizer.state_dict(),
             self.spatial_lr_scale
         )
@@ -122,7 +167,15 @@ class GaussianModel:
     def get_object_ins(self):
         # if you want to apply sigmoid after Rasterization uncomment below line and comment after line.
         # return self._object_ins
-        return self.opacity_activation(self._object_ins)
+        # return self.opacity_activation(self._object_ins)
+        # import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
+        f = self.grid(self._xyz, bound=2)
+        f = self.grid_mlp(f)
+        f  =f.unsqueeze(dim=1)
+      
+        return f
+        
     
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
@@ -172,7 +225,9 @@ class GaussianModel:
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
-            {'params': [self._object_ins], 'lr': training_args.object_ins_lr, "name": "object_ins"}
+            {'params': [self._object_ins], 'lr': training_args.object_ins_lr, "name": "object_ins"},
+            {'params': list(self.grid_mlp.get_mlp_parameters()), 'lr':training_args.object_ins_lr , "name": "grid_mlp"}
+            
             ]        
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
@@ -230,7 +285,7 @@ class GaussianModel:
 
     def load_ply(self, path):
         plydata = PlyData.read(path)
-
+        
         xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
                         np.asarray(plydata.elements[0]["y"]),
                         np.asarray(plydata.elements[0]["z"])),  axis=1)
@@ -275,6 +330,13 @@ class GaussianModel:
         self._object_ins = nn.Parameter(torch.tensor(object_ins, dtype=torch.float, device="cuda").requires_grad_(True))
         self.active_sh_degree = self.max_sh_degree
 
+        # load grid_mlp model 
+        # import pdb;pdb.set_trace()
+        weight_dict = torch.load(path.replace("point_cloud.ply","grid_mlp.pth"),map_location="cuda")
+        self.grid_mlp.load_state_dict(weight_dict)
+        self.grid_mlp = self.grid_mlp.to("cuda")
+        import pdb;pdb.set_trace()
+
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
@@ -293,6 +355,8 @@ class GaussianModel:
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
+            if len(group["params"]) > 1:
+                continue
             stored_state = self.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
                 stored_state["exp_avg"] = stored_state["exp_avg"][mask]
@@ -327,6 +391,9 @@ class GaussianModel:
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
+            if len(group["params"])>1:
+                # import pdb;pdb.set_trace()
+                continue
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
             stored_state = self.optimizer.state.get(group['params'][0], None)
