@@ -187,7 +187,7 @@ class GaussianRasterizer(nn.Module):
             
         return visible
 
-    def forward(self, means3D, means2D, opacities, shs = None, sh_objs = None, colors_precomp = None, scales = None, rotations = None, cov3D_precomp = None):     
+    def forward(self, means3D, means2D, opacities, shs = None, sh_objs = None, colors_precomp = None, scales = None, rotations = None, cov3D_precomp = None):
         raster_settings = self.raster_settings
 
         if (shs is None and colors_precomp is None) or (shs is not None and colors_precomp is not None):

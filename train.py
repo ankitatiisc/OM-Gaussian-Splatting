@@ -107,6 +107,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss
         else:
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        # import pdb;pdb.set_trace()
         loss.backward()
 
         iter_end.record()

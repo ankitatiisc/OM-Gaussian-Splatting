@@ -153,9 +153,9 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder,dataset_name
         if(dataset_name== 'mip360'):
             mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'masks',os.path.basename(extr.name))
         elif(dataset_name=='scannet'):
-            mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'full', f"{extr.name.split('.')[0]}.instance-filt.png") 
+            mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'rs_semantics',os.path.basename(extr.name).replace('jpg','png')) 
         elif(dataset_name=='replica'):
-            mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'masks', os.path.basename(extr.name))
+            mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'semantic_instance', os.path.basename(extr.name).replace('rgb_','semantic_instance_'))
         elif(dataset_name=='messy_room'):
             mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'instance',f"{extr.name.split('.')[0]}.npy")
             
@@ -168,6 +168,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder,dataset_name
                 mask = Image.fromarray(mask.astype(np.uint8))
             else:
                 mask = Image.open(mask_path)
+                # import pdb;pdb.set_trace()
             mask_flag = True
         # import pdb;pdb.set_trace()
        
@@ -258,7 +259,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background,dataset_nam
         fovx = contents["camera_angle_x"]
         #fovx = contents['fl_x']
         frames = contents["frames"]
-        load_360=True
+        load_360=False
         if load_360:
             # To load 360 circle poses 
             poses = np.stack([pose_spherical(angle, -65.0, 7.0) for angle in np.linspace(0, 180, len(frames))], 0)
@@ -270,7 +271,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background,dataset_nam
             mask_path =''
             if(dataset_name == 'dmnerf'):
                 if(frame["file_path"][0] is 't'):
-                    mask_path = os.path.join(path,'train/semantic_maps/semantic_instance_'+frame["file_path"][-4:]+extension)
+                    mask_path = os.path.join(path,'train/semantic_instance/semantic_instance_'+frame["file_path"][-4:]+extension)
                 else:
                     mask_path = os.path.join(path,'val/semantic_instance/semantic_instance_'+frame["file_path"][-4:]+extension)
             elif(dataset_name == 'scannet'):

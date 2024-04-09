@@ -18,6 +18,32 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from torch_scatter import scatter_mean
 
+def create_embedding_fn(input_X,
+                        input_dims = 2,
+                        include_input = False,
+                        num_freq = 2,
+                        log_sampling = True,
+                        periodic_fns = [torch.sin, torch.cos]):
+    
+    max_freq = num_freq-1
+    embed_fns = []
+    d = input_dims
+    out_dim = 0
+    if include_input:
+        embed_fns.append(lambda x : x)
+        out_dim += d
+        
+    if log_sampling:
+        freq_bands = 2.**torch.linspace(0., max_freq, steps=num_freq)
+    else:
+        freq_bands = torch.linspace(2.**0., 2.**max_freq, steps=num_freq)
+        
+    for freq in freq_bands:
+        for p_fn in periodic_fns:
+            embed_fns.append(lambda x, p_fn=p_fn, freq=freq : p_fn(x * freq))
+            out_dim += d
+    return  torch.cat([fn(input_X) for fn in embed_fns], -1)
+
 # from torch_scatter import scatter_mean
 def l1_loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
@@ -129,34 +155,26 @@ def ae_loss(features, instance_labels, sigma=1.0):
     
     unique_instances, inverse_indices = torch.unique(instance_labels, return_inverse=True)
     centroids = scatter_mean(features, inverse_indices, dim=0, dim_size=unique_instances.shape[0])
-    
+
+    higher_centroids = create_embedding_fn(centroids)
+    higher_features = create_embedding_fn(features)
+
     # Pull loss: pull features towards their instance centroid
     pull_loss = torch.pow(features - centroids[inverse_indices], 2).sum(dim=-1).mean()
-    
+    # pull_loss = torch.pow(higher_features - higher_centroids[inverse_indices], 2).sum(dim=-1).mean()
+
+
     # Push loss: push centroids away from each other
     # for each instance, compute distance to all other instances
     distances = torch.pow(centroids.unsqueeze(1) - centroids.unsqueeze(0), 2).sum(dim=-1) # (num_instances, num_instances)
-    # import pdb;pdb.set_trace()
     distances_nondiag = distances[~torch.eye(distances.shape[0], dtype=torch.bool, device=features.device)] # (num_instances * (num_instances - 1))
+    if(distances_nondiag.shape[0]==0):
+        return pull_loss
+    # distances = torch.pow(higher_centroids.unsqueeze(1) - higher_centroids.unsqueeze(0), 2).sum(dim=-1) # (num_instances, num_instances)
+    # distances_nondiag = distances[~torch.eye(distances.shape[0], dtype=torch.bool, device=features.device)] # (num_instances * (num_instances - 1))
     push_loss = torch.exp(-distances_nondiag/sigma).mean()
+    # import pdb;pdb.set_trace()
     
-    
-    # TODO: below code is for penalty loss, still under develoment 
-    
-    # y = torch.zeros_like(features)
-    # y[features>0.5]=1.
-    # unique_indices = list(map(tuple, y.tolist()))
-    # unique_values,inverse_indices ,counts = torch.unique(torch.tensor(unique_indices).to('cuda'), dim=0,return_counts=True, return_inverse=True)
-    # centroids = scatter_mean(features, inverse_indices, dim=0, dim_size=unique_values.shape[0])
-    # r1 = None
-    # t1 = unique_values[counts<200]
-    # for i in t1:
-    #     if r1 ==None:
-    #         r1=torch.all(y==i,dim=1)
-    #     else:
-    #         r1 = torch.logical_or(r1,torch.all(y==i,dim=1))
-    # # import pdb;pdb.set_trace()
-    # p_loss = 1 - torch.pow(features[r1] - centroids[inverse_indices[r1]], 2).sum(dim=-1).mean()
     return pull_loss + push_loss 
 
 
