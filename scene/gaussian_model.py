@@ -104,7 +104,8 @@ class GaussianModel:
         self.num_objects = max_objects
         
         self.setup_functions()
-        self.grid_mlp = MLP(self.grid.output_dim,self.num_objects, 64, 3, bias=False).to('cuda')
+        # self.grid_mlp = MLP(self.grid.output_dim,self.num_objects, 64, 3, bias=False).to('cuda')
+        self.grid_mlp = MLP(3,self.num_objects, 64, 3, bias=False).to('cuda')
     def capture(self):
         return (
             self.active_sh_degree,
@@ -170,10 +171,11 @@ class GaussianModel:
         # return self.opacity_activation(self._object_ins)
         # import pdb;pdb.set_trace()
         # import pdb;pdb.set_trace()
-        f = self.grid(self._xyz, bound=2)
-        f = self.grid_mlp(f)
+        # f = self.grid(self._xyz, bound=2)
+        # import pdb;pdb.set_trace()
+        f = self.grid_mlp(self._xyz)
         f  =f.unsqueeze(dim=1)
-      
+        # import pdb;pdb.set_trace()
         return f
         
     
@@ -225,10 +227,11 @@ class GaussianModel:
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
-            {'params': [self._object_ins], 'lr': training_args.object_ins_lr, "name": "object_ins"},
-            {'params': list(self.grid_mlp.get_mlp_parameters()), 'lr':training_args.object_ins_lr , "name": "grid_mlp"}
-            
-            ]        
+            {'params': [self._object_ins], 'lr': training_args.object_ins_lr, "name": "object_ins"}  
+            ]   
+        l2 = [
+            {'params': self.grid_mlp.parameters(), 'lr': 0.1}]     
+        self.optimizer_mlp = torch.optim.Adam(l2, lr=0.1, eps=1e-15)
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
@@ -355,8 +358,7 @@ class GaussianModel:
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
-            if len(group["params"]) > 1:
-                continue
+            
             stored_state = self.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
                 stored_state["exp_avg"] = stored_state["exp_avg"][mask]
@@ -391,9 +393,7 @@ class GaussianModel:
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
-            if len(group["params"])>1:
-                # import pdb;pdb.set_trace()
-                continue
+          
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
             stored_state = self.optimizer.state.get(group['params'][0], None)

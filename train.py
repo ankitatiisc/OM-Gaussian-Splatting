@@ -95,7 +95,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image)
         
         gt_mask = viewpoint_cam.original_mask
-        # import pdb;pdb.set_trace()
+        if(iteration>3000):## for now check here if weigths are updating or not. 
+            import pdb;pdb.set_trace()
         if gt_mask is not None:
     
             gt_mask = gt_mask.cuda()
@@ -147,6 +148,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
+                gaussians.optimizer.zero_grad(set_to_none = True)
+                gaussians.optimizer_mlp.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
 
             if (iteration in checkpoint_iterations):

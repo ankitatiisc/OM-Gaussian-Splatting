@@ -80,8 +80,11 @@ class CameraInfo(NamedTuple):
     image_path: str
     mask:np.array
     mask_path:str
+    invalid_img:np.array 
+    invalid_path:str 
     image_name: str
     mask_flag:bool
+    invalid_flag:bool
     width: int
     height: int
 
@@ -149,13 +152,19 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder,dataset_name
         mask_path  = ''
         mask       = None
         mask_flag  = False
- 
+
+        invalid_img = None
+        invalid_path = ''
+        invalid_flag = False
+
         if(dataset_name== 'mip360'):
             mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'masks',os.path.basename(extr.name))
         elif(dataset_name=='scannet'):
-            mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'full', f"{extr.name.split('.')[0]}.instance-filt.png") 
+            mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'rs_semantics',os.path.basename(extr.name).replace('jpg','png')) 
         elif(dataset_name=='replica'):
-            mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'masks', os.path.basename(extr.name))
+            # mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'semantic_instance', os.path.basename(extr.name).replace('rgb_','semantic_instance_'))
+            mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'rs_semantics',os.path.basename(extr.name).replace('jpg','png')) 
+            invalid_path = os.path.join(images_folder.rsplit('/', 1)[0],'m2f_invalid',os.path.basename(extr.name).replace('jpg','png')) 
         elif(dataset_name=='messy_room'):
             mask_path  = os.path.join(images_folder.rsplit('/', 1)[0],'instance',f"{extr.name.split('.')[0]}.npy")
             
@@ -168,12 +177,23 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder,dataset_name
                 mask = Image.fromarray(mask.astype(np.uint8))
             else:
                 mask = Image.open(mask_path)
+                # import pdb;pdb.set_trace()
             mask_flag = True
         # import pdb;pdb.set_trace()
+        
+        if os.path.isfile(invalid_path):
+            if dataset_name =='messy_room':
+                invalid_img = np.load(invalid_path)
+                # convert np array to PIL image
+                invalid_img = Image.fromarray(invalid_img.astype(np.uint8))
+            else:
+                invalid_img = Image.open(invalid_path)
+                # import pdb;pdb.set_trace()
+            invalid_flag = True
        
      
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path,mask = mask,mask_path = mask_path, image_name=image_name,mask_flag=mask_flag, width=width, height=height)
+                              image_path=image_path,mask = mask,mask_path = mask_path,invalid_img= invalid_img,invalid_path = invalid_path, image_name=image_name,mask_flag=mask_flag,invalid_flag= invalid_flag, width=width, height=height)
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
