@@ -126,7 +126,7 @@ def hungarian(pred_ins, gt_ins, valid_ins_num, ins_num):
 
 
 def ae_loss(features, instance_labels, sigma=1.0):
-    
+
     unique_instances, inverse_indices = torch.unique(instance_labels, return_inverse=True)
     centroids = scatter_mean(features, inverse_indices, dim=0, dim_size=unique_instances.shape[0])
     

@@ -23,7 +23,13 @@ from utils.general_utils import strip_symmetric, build_scaling_rotation
 from gridencoder import GridEncoder
 import  torch.nn.functional as F 
 import torch.nn.init as init
-        
+
+from scene.vqvae_modules.vqvae import VQVAE
+
+
+# model = VQVAE(args.n_hiddens, args.n_residual_hiddens,
+#               args.n_residual_layers, args.n_embeddings, args.embedding_dim, args.beta).to(device)
+
 class MLP(nn.Module):
     def __init__(self, dim_in, dim_out, dim_hidden, num_layers, bias=True):
         super().__init__()
@@ -64,8 +70,6 @@ class MLP(nn.Module):
 
 class GaussianModel:
 
-    
-
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
             L = build_scaling_rotation(scaling_modifier * scaling, rotation)
@@ -105,7 +109,10 @@ class GaussianModel:
         
         self.setup_functions()
         # self.grid_mlp = MLP(self.grid.output_dim,self.num_objects, 64, 3, bias=False).to('cuda')
-        self.grid_mlp = MLP(3,self.num_objects, 64, 3, bias=False).to('cuda')
+        # self.grid_mlp = MLP(3,self.num_objects, 64, 3, bias=False).to('cuda')
+
+        self.vqvae_block = VQVAE(12, 64, 64, 1, 256, 64, 0.25).to('cuda')
+
     def capture(self):
         return (
             self.active_sh_degree,
@@ -119,7 +126,8 @@ class GaussianModel:
             self.max_radii2D,
             self.xyz_gradient_accum,
             self.denom,
-            self.grid_mlp.state_dict(),
+            # self.grid_mlp.state_dict(),
+            self.vqvae_block.state_dict(),
             self.optimizer.state_dict(),
             self.spatial_lr_scale
         )
@@ -167,7 +175,7 @@ class GaussianModel:
     @property
     def get_object_ins(self):
         # if you want to apply sigmoid after Rasterization uncomment below line and comment after line.
-        # return self._object_ins
+        return self._object_ins
         # return self.opacity_activation(self._object_ins)
         # import pdb;pdb.set_trace()
         # import pdb;pdb.set_trace()
@@ -176,8 +184,7 @@ class GaussianModel:
         f = self.grid_mlp(self._xyz)
         f  =f.unsqueeze(dim=1)
         # import pdb;pdb.set_trace()
-        return f
-        
+        return f      
     
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)

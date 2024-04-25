@@ -44,6 +44,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
+
+
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
 
@@ -88,8 +90,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg) 
-        image, viewspace_point_tensor, visibility_filter, radii,decomp_objs = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"],render_pkg["render_object"]
         
+        image, viewspace_point_tensor, visibility_filter, radii, decomp_objs = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"],render_pkg["render_object"]
+        
+        import pdb
+        pdb.set_trace()
+        temp = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects)
+
+        embedding_loss, codebooks, perplexity = gaussians.vqvae_block(temp)
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
@@ -102,9 +110,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gt_mask = gt_mask.cuda()
             temp_gt_mask = gt_mask.view(-1) # shape [H*W]     
             # decomp_objs = torch.sigmoid(decomp_objs)
-            temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
-            
-            decomposition_loss = ae_loss(temp_pred_mask,temp_gt_mask)# ae loss
+            # temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
+
+            decomposition_loss = ae_loss(codebooks, temp_gt_mask)# ae loss
             #decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)# DM-Nerf Loss
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss
         else:
