@@ -18,11 +18,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from hdbscan import HDBSCAN
 from scipy.spatial.distance import cdist
-colors = np.random.randint(0, 255, size=(300, 3))
+colors = np.random.randint(0, 255, size=(8200, 3))
 
 def do_cluster(rendered_object):
     # import pdb;pdb.set_trace()
-    gt_ids = np.array([list(np.binary_repr(i, width=8)) for i in np.arange(256)], dtype=np.float32)
+    gt_ids = np.array([list(np.binary_repr(i, width=12)) for i in np.arange(256)], dtype=np.float32)
     pred_ids = rendered_object.cpu().numpy()
     distance_matrix = cdist(pred_ids, gt_ids, metric='euclidean')
     ids11 = np.argmin(distance_matrix,axis=1)
@@ -30,7 +30,7 @@ def do_cluster(rendered_object):
     
     # ids = t1[t2>550]
     ids = t1
-    gt_ids = np.array([list(np.binary_repr(i, width=8)) for i in ids], dtype=np.float32)
+    gt_ids = np.array([list(np.binary_repr(i, width=12)) for i in ids], dtype=np.float32)
     distance_matrix = cdist(pred_ids, gt_ids, metric='euclidean')
     i_max = np.argmin(distance_matrix,axis=1)
     t1,t2 ,t3= np.unique(i_max,return_inverse=True,return_counts=True)
@@ -109,7 +109,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     gts_path = os.path.join(model_path, name, f'ours_{iteration}', "gt")
     mask_path = os.path.join(model_path, name, f'ours_{iteration}', "mask")
     mask_instance_path_img = os.path.join(model_path, name, f'ours_{iteration}', "instancs_bw")
-    mask_instance_path_1 = os.path.join(model_path, name, f'ours_{iteration}', "pred_semantics")
+    mask_instance_path_1 = os.path.join(model_path, name, f'ours_{iteration}', "pred_semantics_org")
     mask_instance_path_2 = os.path.join(model_path, name, f'ours_{iteration}', "pred_surrogateid")
     video_path = os.path.join(model_path,'rendered_videos',f'ours_{iteration}')
     makedirs(render_path, exist_ok=True)
@@ -123,7 +123,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         render_output = render(view, gaussians, pipeline, background)
         rendering = render_output["render"]
         rendered_object = render_output['render_object'] # shape [O,H,W] O-no of objects
-        rendered_object = rendered_object.permute(1,2,0).view(-1,8)
+        rendered_object = rendered_object.permute(1,2,0).view(-1,12)
         
                 # Use below line when you are applying sigmoid after Rasterization 
                 # rendered_object = torch.sigmoid(rendered_object)
@@ -137,7 +137,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
                 # # dummy_rendered_object[rendered_object<0] = 0
                 # dummy_rendered_object = dummy_rendered_object.to('cpu').view(rendering.shape[1],rendering.shape[2],3)
                 # # import pdb;pdb.set_trace()
-        dummy_rendered_object = do_cluster(rendered_object.cpu()).view(rendering.shape[1],rendering.shape[2],8)
+        # import pdb;pdb.set_trace()
+        dummy_rendered_object = do_cluster(rendered_object.cpu()).view(rendering.shape[1],rendering.shape[2],12)
         dummy_rendered_object ,dummy_image_instance,decimal_tensor= get_rgb_masks(dummy_rendered_object)
         gt = view.original_image[0:3, :, :]
         # import pdb;pdb.set_trace()
@@ -145,12 +146,21 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         z = np.argmax(y)
         img = np.zeros_like(decimal_tensor)
         img[decimal_tensor!=x[z]] = 1
-        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-        cv2.imwrite(os.path.join(mask_path, '{0:05d}'.format(idx) + ".png"),dummy_rendered_object)
-        cv2.imwrite(os.path.join(mask_instance_path_img, '{0:05d}'.format(idx) + ".png"),np.array(img,dtype=np.int32)*255)
-        np.save(os.path.join(mask_instance_path_1, '{0:05d}'.format(idx) + ".npy"),dummy_image_instance)
-        np.save(os.path.join(mask_instance_path_2, '{0:05d}'.format(idx) + ".npy"),np.array(img,dtype=np.int32))
+        # import pdb;pdb.set_trace()
+        try:
+            torchvision.utils.save_image(rendering, os.path.join(render_path,view.image_name + ".png"))
+            torchvision.utils.save_image(gt, os.path.join(gts_path,view.image_name + ".png"))
+            cv2.imwrite(os.path.join(mask_path,view.image_name + ".png"),dummy_rendered_object)
+            cv2.imwrite(os.path.join(mask_instance_path_img,view.image_name + ".png"),np.array(img,dtype=np.int32)*255)
+            np.save(os.path.join(mask_instance_path_1,view.image_name + ".npy"),dummy_image_instance)
+            np.save(os.path.join(mask_instance_path_2,view.image_name + ".npy"),np.array(img,dtype=np.int32))
+        except:
+            torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
+            torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+            cv2.imwrite(os.path.join(mask_path, '{0:05d}'.format(idx) + ".png"),dummy_rendered_object)
+            cv2.imwrite(os.path.join(mask_instance_path_img, '{0:05d}'.format(idx) + ".png"),np.array(img,dtype=np.int32)*255)
+            np.save(os.path.join(mask_instance_path_1, '{0:05d}'.format(idx) + ".npy"),dummy_image_instance)
+            np.save(os.path.join(mask_instance_path_2, '{0:05d}'.format(idx) + ".npy"),np.array(img,dtype=np.int32))
     
     images_to_video(render_path,os.path.join(video_path, f'{name}_rgb.mp4') )
     images_to_video(mask_path,os.path.join(video_path,f'{name}_mask.mp4') )

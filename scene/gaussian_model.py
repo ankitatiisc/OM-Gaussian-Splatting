@@ -332,10 +332,10 @@ class GaussianModel:
 
         # load grid_mlp model 
         # import pdb;pdb.set_trace()
-        weight_dict = torch.load(path.replace("point_cloud.ply","grid_mlp.pth"),map_location="cuda")
-        self.grid_mlp.load_state_dict(weight_dict)
-        self.grid_mlp = self.grid_mlp.to("cuda")
-        import pdb;pdb.set_trace()
+        # weight_dict = torch.load(path.replace("point_cloud.ply","grid_mlp.pth"),map_location="cuda")
+        # self.grid_mlp.load_state_dict(weight_dict)
+        # self.grid_mlp = self.grid_mlp.to("cuda")
+        # import pdb;pdb.set_trace()
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
@@ -610,5 +610,4 @@ class GaussianModel:
 
     # if you want to manipulate objects you can do here.
     def manipulation(self):
-        import pdb;pdb.set_trace()
         return
