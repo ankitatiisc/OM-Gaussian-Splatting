@@ -92,9 +92,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg) 
         
         image, viewspace_point_tensor, visibility_filter, radii, decomp_objs = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"],render_pkg["render_object"]
-        
-        import pdb
-        pdb.set_trace()
         temp = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects)
 
         embedding_loss, codebooks, perplexity = gaussians.vqvae_block(temp)
@@ -157,8 +154,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
-                gaussians.optimizer_mlp.step()
-                gaussians.optimizer.zero_grad(set_to_none = True)
+                gaussians.optimizer_vqvae.step()
+                gaussians.optimizer_vqvae.zero_grad(set_to_none = True)
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
