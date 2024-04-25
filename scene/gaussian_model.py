@@ -174,18 +174,8 @@ class GaussianModel:
         return self.opacity_activation(self._opacity)
     @property
     def get_object_ins(self):
-        # if you want to apply sigmoid after Rasterization uncomment below line and comment after line.
-        return self._object_ins
-        # return self.opacity_activation(self._object_ins)
-        # import pdb;pdb.set_trace()
-        # import pdb;pdb.set_trace()
-        # f = self.grid(self._xyz, bound=2)
-        # import pdb;pdb.set_trace()
-        f = self.grid_mlp(self._xyz)
-        f  =f.unsqueeze(dim=1)
-        # import pdb;pdb.set_trace()
-        return f      
-    
+        return self.opacity_activation(self._object_ins)
+       
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
 
