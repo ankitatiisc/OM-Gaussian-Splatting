@@ -173,3 +173,5 @@ submodules1/
 submodules_old/
 post_process.py
 post_process*
+*.npy
+miou_metric.py

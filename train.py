@@ -29,7 +29,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-
+from copy import deepcopy
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,input_args):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -49,6 +49,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     viewpoint_stack = None
     ema_loss_for_log = 0.0
+    last_guassians= deepcopy(gaussians)
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):        
@@ -95,14 +96,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image)
         
         gt_mask = viewpoint_cam.original_mask
-        if gt_mask is not None:
-    
-            gt_mask = gt_mask.cuda()
-            temp_gt_mask = gt_mask.view(-1) # shape [H*W]     
+        if (gt_mask is not None):
+            gt_mask = gt_mask.to()
+            temp_gt_mask = gt_mask.view(-1) # shape [H*W]  
+            
+            temp_gt_invalid = viewpoint_cam.original_invalid.view(-1)
             # decomp_objs = torch.sigmoid(decomp_objs)
             temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
             
-            decomposition_loss = ae_loss(temp_pred_mask,temp_gt_mask)# ae loss
+            decomposition_loss = ae_loss(temp_pred_mask,temp_gt_mask,temp_gt_invalid,gaussians,iteration)# ae loss
             #decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)# DM-Nerf Loss
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss
         else:
@@ -113,7 +115,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_end.record()
 
         with torch.no_grad():
-            # Progress bar
+            # Progress bar   
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
@@ -142,7 +144,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
-
+            
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
@@ -222,7 +224,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000,60_000,90_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000,13_000,15_000,18_000,21_000,25_000, 30_000,35_000,40_000,50_000,60_000,90_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)

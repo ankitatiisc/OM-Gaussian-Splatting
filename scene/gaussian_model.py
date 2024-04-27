@@ -386,6 +386,8 @@ class GaussianModel:
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
+        # import pdb;pdb.set_trace()
+
         new_object_ins = self._object_ins[selected_pts_mask].repeat(N,1,1)
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation,new_object_ins)
 
@@ -546,5 +548,5 @@ class GaussianModel:
 
     # if you want to manipulate objects you can do here.
     def manipulation(self):
-        import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         return

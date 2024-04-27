@@ -17,7 +17,12 @@ from math import exp
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from torch_scatter import scatter_mean
+from info_nce import InfoNCE, info_nce
+triplet_loss = nn.TripletMarginLoss(margin=1, p=2, eps=1e-7)
+info_nceloss = InfoNCE(negative_mode='paired')
 
+mlp_weights  = torch.from_numpy(np.load('/data/jaswanth/OM-Gaussian-Splatting-org/weights.npy'))
+mlp_bias = torch.from_numpy(np.load('/data/jaswanth/OM-Gaussian-Splatting-org/bias.npy'))
 def create_embedding_fn(input_X,
                         input_dims = 2,
                         include_input = False,
@@ -151,17 +156,17 @@ def hungarian(pred_ins, gt_ins, valid_ins_num, ins_num):
     return cost_ce, cost_siou, order_row, order_col
 
 
-def ae_loss(features, instance_labels, sigma=1.0):
-    
+def ae_loss(features, instance_labels,valid_instances,gaussians,iteration, sigma=1.0):
+   
+    features = (features*valid_instances.unsqueeze(dim=-1))
     unique_instances, inverse_indices = torch.unique(instance_labels, return_inverse=True)
     centroids = scatter_mean(features, inverse_indices, dim=0, dim_size=unique_instances.shape[0])
 
-    higher_centroids = create_embedding_fn(centroids)
-    higher_features = create_embedding_fn(features)
+    
 
-    # Pull loss: pull features towards their instance centroid
-    pull_loss = torch.pow(features - centroids[inverse_indices], 2).sum(dim=-1).mean()
-    # pull_loss = torch.pow(higher_features - higher_centroids[inverse_indices], 2).sum(dim=-1).mean()
+    # # Pull loss: pull features towards their instance centroid
+    pull_loss = (torch.abs(torch.pow(features - centroids[inverse_indices], 2).sum(dim=-1)-0.00001)*valid_instances).mean()
+   
 
 
     # Push loss: push centroids away from each other
@@ -170,11 +175,46 @@ def ae_loss(features, instance_labels, sigma=1.0):
     distances_nondiag = distances[~torch.eye(distances.shape[0], dtype=torch.bool, device=features.device)] # (num_instances * (num_instances - 1))
     if(distances_nondiag.shape[0]==0):
         return pull_loss
-    # distances = torch.pow(higher_centroids.unsqueeze(1) - higher_centroids.unsqueeze(0), 2).sum(dim=-1) # (num_instances, num_instances)
-    # distances_nondiag = distances[~torch.eye(distances.shape[0], dtype=torch.bool, device=features.device)] # (num_instances * (num_instances - 1))
-    push_loss = torch.exp(-distances_nondiag/sigma).mean()
-    # import pdb;pdb.set_trace()
     
-    return pull_loss + push_loss 
+    push_loss = torch.exp(-distances_nondiag/sigma).mean()
+    
+    #Extra push loss, need to check if we need this or not
+    # push_loss_1 = torch.exp(-2*torch.pow(features-0.5,2).sum(dim=-1)).mean()
+    
+    
+    # 3D loss
+    if(iteration>15000):
+        with torch.no_grad():
+            gaussian_means = gaussians.get_xyz
+        gaussian_features = gaussians.get_object_ins
+        x1 = torch.randperm(gaussian_means.shape[0])[:int(2000)]
+        gaussian_means=  gaussian_means[x1]
+        gaussian_features = gaussian_features[x1]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
+        # import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
+        mean_dis = torch.pow(gaussian_means.unsqueeze(1) - gaussian_means.unsqueeze(0), 2).sum(dim=-1)
+        features_dis = torch.pow(gaussian_features.unsqueeze(1) - gaussian_features.unsqueeze(0), 2).sum(dim=-1)
+        mean_dis = (mean_dis/mean_dis.max()) + 0.0001
+        features_dis = ((features_dis/features_dis.max()) + 0.0001).view(mean_dis.shape)
+        loss_3d = torch.abs(torch.log(features_dis/mean_dis)).mean()
+        return pull_loss + 2*push_loss + loss_3d*0.1
+    # import pdb;pdb.set_trace()
+            
+    #Triplet Loss
+    # import pdb;pdb.set_trace()
+    if((iteration>15000) ):
+        full_distances = torch.pow(features - centroids[inverse_indices], 2).sum(dim=-1)
+        mean_distances = full_distances.mean()
+        indices = full_distances>mean_distances
+        anchors = features[indices]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
+        positive_indices = valid_instances>0.9
+        positives = centroids[inverse_indices][indices]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
+        negative_indices =  (inverse_indices+torch.randint(1,unique_instances.shape[0] , size=(features.shape[0],)).to(inverse_indices.device))%unique_instances.shape[0]
+        negatives = centroids[negative_indices][indices]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
+        riplet_loss_1 = triplet_loss(anchors,positives,negatives)
+        return riplet_loss_1*0.2 +pull_loss + 2*push_loss
+    
+    
+    return pull_loss + 2*push_loss +push_loss_1
 
 
