@@ -53,6 +53,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+    gaussians.vqvae_block.train()
     for iteration in range(first_iter, opt.iterations + 1):        
         if network_gui.conn == None:
             network_gui.try_connect()
@@ -110,8 +111,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
 
             decomposition_loss = ae_loss(codebooks, temp_gt_mask)# ae loss
+            print("\ndecomposition loss --------------------------------------------------------------")
+            print(decomposition_loss)
             #decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)# DM-Nerf Loss
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss + embedding_loss
         else:
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         loss.backward()

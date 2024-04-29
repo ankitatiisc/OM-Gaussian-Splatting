@@ -16,7 +16,7 @@ import torch
 from sklearn.cluster import KMeans
 import numpy as np
 import matplotlib.pyplot as plt
-from hdbscan import HDBSCAN
+# from hdbscan import HDBSCAN
 from scipy.spatial.distance import cdist
 colors = np.random.randint(0, 255, size=(8200, 3))
 

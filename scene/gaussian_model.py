@@ -20,7 +20,7 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-from gridencoder import GridEncoder
+# from gridencoder import GridEncoder
 import  torch.nn.functional as F 
 import torch.nn.init as init
 
@@ -84,8 +84,8 @@ class GaussianModel:
 
         self.opacity_activation = torch.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
-        self.grid= GridEncoder(input_dim=3, num_levels=16, level_dim=2, base_resolution=16, log2_hashmap_size=19, desired_resolution=2048, gridtype='hash', align_corners=False, interpolation='linear')
-        self.grid = self.grid.to('cuda')
+        # self.grid= GridEncoder(input_dim=3, num_levels=16, level_dim=2, base_resolution=16, log2_hashmap_size=19, desired_resolution=2048, gridtype='hash', align_corners=False, interpolation='linear')
+        # self.grid = self.grid.to('cuda')
         self.rotation_activation = torch.nn.functional.normalize
 
 
@@ -103,6 +103,7 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
         self.optimizer = None
+        self.optimizer_vqvae = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
         self.num_objects = max_objects
@@ -111,7 +112,7 @@ class GaussianModel:
         # self.grid_mlp = MLP(self.grid.output_dim,self.num_objects, 64, 3, bias=False).to('cuda')
         # self.grid_mlp = MLP(3,self.num_objects, 64, 3, bias=False).to('cuda')
 
-        self.vqvae_block = VQVAE(12, 64, 64, 1, 256, 64, 0.25).to('cuda')
+        self.vqvae_block = VQVAE(12, 8, 8, 1, 16, 8, 0.25).to('cuda')
 
     def capture(self):
         return (
@@ -129,6 +130,7 @@ class GaussianModel:
             # self.grid_mlp.state_dict(),
             self.vqvae_block.state_dict(),
             self.optimizer.state_dict(),
+            self.optimizer_vqvae.state_dict(),
             self.spatial_lr_scale
         )
     
@@ -150,6 +152,7 @@ class GaussianModel:
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
+        self.optimizer_vqvae.load_state_dict(opt_dict)
 
     @property
     def get_scaling(self):
