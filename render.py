@@ -16,8 +16,10 @@ import torch
 from sklearn.cluster import KMeans
 import numpy as np
 import matplotlib.pyplot as plt
-from hdbscan import HDBSCAN
+# from hdbscan import HDBSCAN
 from scipy.spatial.distance import cdist
+from helper.post_process_noise import remove_noise_from_results
+from helper.replace_ids import replace_ids_with_gt
 colors = np.random.randint(0, 255, size=(8200, 3))
 
 def do_cluster(rendered_object):
@@ -104,7 +106,7 @@ def images_to_video(image_folder, video_name, fps=20):
     cv2.destroyAllWindows()
     video.release()
     
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
+def render_set(model_path, name, iteration, views, gaussians, pipeline, background,dataset_path):
     render_path = os.path.join(model_path, name, f'ours_{iteration}',"renders")
     gts_path = os.path.join(model_path, name, f'ours_{iteration}', "gt")
     mask_path = os.path.join(model_path, name, f'ours_{iteration}', "mask")
@@ -119,6 +121,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(mask_instance_path_1, exist_ok=True)
     makedirs(mask_instance_path_2, exist_ok=True)
     makedirs(mask_instance_path_img, exist_ok=True)
+    # import pdb;pdb.set_trace()
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         render_output = render(view, gaussians, pipeline, background)
         rendering = render_output["render"]
@@ -138,6 +141,9 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
                 # dummy_rendered_object = dummy_rendered_object.to('cpu').view(rendering.shape[1],rendering.shape[2],3)
                 # # import pdb;pdb.set_trace()
         # import pdb;pdb.set_trace()
+        # dummy_rendered_object = torch.zeros_like(rendered_object).to('cpu')
+        # dummy_rendered_object[rendered_object>0.5] = 1
+        # dummy_rendered_object = dummy_rendered_object.view(rendering.shape[1],rendering.shape[2],12)
         dummy_rendered_object = do_cluster(rendered_object.cpu()).view(rendering.shape[1],rendering.shape[2],12)
         dummy_rendered_object ,dummy_image_instance,decimal_tensor= get_rgb_masks(dummy_rendered_object)
         gt = view.original_image[0:3, :, :]
@@ -165,9 +171,14 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     images_to_video(render_path,os.path.join(video_path, f'{name}_rgb.mp4') )
     images_to_video(mask_path,os.path.join(video_path,f'{name}_mask.mp4') )
     images_to_video(mask_instance_path_img,os.path.join(video_path,f'{name}_bw.mp4') )
+    remove_noise_from_results(os.path.join(model_path, name, f'ours_{iteration}'))
+    if(not ("messy_room" in dataset_path)):
+        replace_ids_with_gt(os.path.join(model_path, name, f'ours_{iteration}'),dataset_path)
+    
     
 # To render each object separately if you want to use this function you need to add --save_decomp while training the scene
-def render_decomp_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, max_objects : int):
+def render_decomp_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, max_objects : int,dataset_path):
+
     save_path  = os.path.join(dataset.model_path,'rendered_decomp_objs') 
     mkdir_p(save_path)
     with torch.no_grad():
@@ -184,7 +195,8 @@ def render_decomp_sets(dataset : ModelParams, iteration : int, pipeline : Pipeli
             render_set(save_path, obj_ply[:-4], scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
             
 
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, max_objects : int):
+def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, max_objects : int,dataset_path,):
+    
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, max_objects = max_objects)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
@@ -192,11 +204,15 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
         gaussians.manipulation()
+        if((dataset.dataset =='replica') or (dataset.dataset =='replica')):
+            dataset_path = os.path.join(dataset_path,'rs_semantics')
+        elif((dataset.dataset =='messy_room')):
+            dataset_path= os.path.join(dataset_path,'instance')
         if not skip_train:
-             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
+             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,dataset_path)
 
         if not skip_test:
-             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
+             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,dataset_path)
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -214,6 +230,7 @@ if __name__ == "__main__":
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
+    # import pdb;pdb.set_trace
     if args.load_decomp:
         render_decomp_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test,args.max_objects)
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test,args.max_objects)
+    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test,args.max_objects,args.source_path)

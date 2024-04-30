@@ -278,14 +278,14 @@ def readColmapSceneInfo(path, images, eval,dataset_name, llffhold=8):
             xyz, rgb, _ = read_points3D_text(txt_path)
         storePly(ply_path, xyz, rgb)
     try:
-        # pcd = fetchPly(ply_path)
-        num_pts = 100_000
-        print(f"Generating random point cloud ({num_pts})...")
+        pcd = fetchPly(ply_path)
+        # num_pts = 100_000
+        # print(f"Generating random point cloud ({num_pts})...")
         
-        # We create random points inside the bounds of the synthetic Blender scenes
-        xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
-        shs = np.random.random((num_pts, 3)) / 255.0
-        pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+        # # We create random points inside the bounds of the synthetic Blender scenes
+        # xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
+        # shs = np.random.random((num_pts, 3)) / 255.0
+        # pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
     except:
         pcd = None
     #import pdb;pdb.set_trace()

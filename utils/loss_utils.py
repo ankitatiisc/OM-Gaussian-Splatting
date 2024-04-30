@@ -17,9 +17,9 @@ from math import exp
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from torch_scatter import scatter_mean
-from info_nce import InfoNCE, info_nce
+# from info_nce import InfoNCE, info_nce
 triplet_loss = nn.TripletMarginLoss(margin=1, p=2, eps=1e-7)
-info_nceloss = InfoNCE(negative_mode='paired')
+# info_nceloss = InfoNCE(negative_mode='paired')
 
 mlp_weights  = torch.from_numpy(np.load('/data/jaswanth/OM-Gaussian-Splatting-org/weights.npy'))
 mlp_bias = torch.from_numpy(np.load('/data/jaswanth/OM-Gaussian-Splatting-org/bias.npy'))
@@ -175,7 +175,7 @@ def ae_loss(features, instance_labels,valid_instances,gaussians,iteration, sigma
     distances_nondiag = distances[~torch.eye(distances.shape[0], dtype=torch.bool, device=features.device)] # (num_instances * (num_instances - 1))
     if(distances_nondiag.shape[0]==0):
         return pull_loss
-    
+    # push_loss  =torch.pow(2 - distances_nondiag,2).mean()/2
     push_loss = torch.exp(-distances_nondiag/sigma).mean()
     
     #Extra push loss, need to check if we need this or not
@@ -197,7 +197,7 @@ def ae_loss(features, instance_labels,valid_instances,gaussians,iteration, sigma
         mean_dis = (mean_dis/mean_dis.max()) + 0.0001
         features_dis = ((features_dis/features_dis.max()) + 0.0001).view(mean_dis.shape)
         loss_3d = torch.abs(torch.log(features_dis/mean_dis)).mean()
-        return pull_loss + 2*push_loss + loss_3d*0.1
+        # return pull_loss + 2*push_loss + loss_3d*0.1
     # import pdb;pdb.set_trace()
             
     #Triplet Loss
@@ -212,9 +212,9 @@ def ae_loss(features, instance_labels,valid_instances,gaussians,iteration, sigma
         negative_indices =  (inverse_indices+torch.randint(1,unique_instances.shape[0] , size=(features.shape[0],)).to(inverse_indices.device))%unique_instances.shape[0]
         negatives = centroids[negative_indices][indices]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
         riplet_loss_1 = triplet_loss(anchors,positives,negatives)
-        return riplet_loss_1*0.2 +pull_loss + 2*push_loss
+        return riplet_loss_1*0.2 +pull_loss + 2*push_loss + loss_3d*0.2
     
     
-    return pull_loss + 2*push_loss +push_loss_1
+    return pull_loss + 2*push_loss 
 
 

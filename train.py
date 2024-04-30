@@ -96,6 +96,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image)
         
         gt_mask = viewpoint_cam.original_mask
+        # import pdb;pdb.set_trace()
         if (gt_mask is not None):
             gt_mask = gt_mask.to()
             temp_gt_mask = gt_mask.view(-1) # shape [H*W]  
