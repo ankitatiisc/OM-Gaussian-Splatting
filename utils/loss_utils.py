@@ -129,7 +129,7 @@ def ae_loss(features, instance_labels, sigma=1.0):
 
     unique_instances, inverse_indices = torch.unique(instance_labels, return_inverse=True)
     centroids = scatter_mean(features, inverse_indices, dim=0, dim_size=unique_instances.shape[0])
-    
+
     # Pull loss: pull features towards their instance centroid
     pull_loss = torch.pow(features - centroids[inverse_indices], 2).sum(dim=-1).mean()
     
@@ -138,7 +138,7 @@ def ae_loss(features, instance_labels, sigma=1.0):
     distances = torch.pow(centroids.unsqueeze(1) - centroids.unsqueeze(0), 2).sum(dim=-1) # (num_instances, num_instances)
     # import pdb;pdb.set_trace()
     distances_nondiag = distances[~torch.eye(distances.shape[0], dtype=torch.bool, device=features.device)] # (num_instances * (num_instances - 1))
-    push_loss = torch.exp(-distances_nondiag/sigma).mean()
+    push_loss =  10 * torch.exp(-distances_nondiag/sigma).mean()
     
     
     # TODO: below code is for penalty loss, still under develoment 

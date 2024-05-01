@@ -27,7 +27,7 @@ class VQVAE(nn.Module):
 
         z_e = self.encoder(x)
 
-        embedding_loss, z_q, perplexity, _, _ = self.vector_quantization(z_e)
+        embedding_loss, z_q, perplexity, min_encodings, _, z = self.vector_quantization(z_e)
 
-        return embedding_loss, z_q, perplexity
+        return embedding_loss, z_q, perplexity, min_encodings, _,  z
 

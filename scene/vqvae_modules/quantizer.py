@@ -71,9 +71,8 @@ class VectorQuantizer(nn.Module):
         # perplexity
         e_mean = torch.mean(min_encodings, dim=0)
         perplexity = torch.exp(-torch.sum(e_mean * torch.log(e_mean + 1e-10)))
-
         # reshape back to match original input shape
 
         # z_q = z_q.permute(0, 3, 1, 2).contiguous()
 
-        return loss, z_q, perplexity, min_encodings, min_encoding_indices
+        return loss, z_q, perplexity, min_encodings, min_encoding_indices, z

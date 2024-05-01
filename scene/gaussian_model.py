@@ -8,7 +8,6 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
-
 import torch
 import numpy as np
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
@@ -112,7 +111,7 @@ class GaussianModel:
         # self.grid_mlp = MLP(self.grid.output_dim,self.num_objects, 64, 3, bias=False).to('cuda')
         # self.grid_mlp = MLP(3,self.num_objects, 64, 3, bias=False).to('cuda')
 
-        self.vqvae_block = VQVAE(12, 8, 8, 1, 16, 8, 0.25).to('cuda')
+        self.vqvae_block = VQVAE(12, 8, 8, 1, 8, 8, 0.5).to('cuda')
 
     def capture(self):
         return (

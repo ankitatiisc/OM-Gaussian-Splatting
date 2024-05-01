@@ -9,6 +9,8 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import cv2
+import numpy as np
 import os
 import torch
 from random import randint
@@ -23,11 +25,23 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
+
+
+def save_model_and_results(model):
+    SAVE_MODEL_PATH = '/data/srinath/nips24/OM-Gaussian-Splatting/save_model'
+
+    results_to_save = {
+        'model': model.state_dict(),
+    }
+    torch.save(results_to_save,
+               SAVE_MODEL_PATH + '/vqvae_scannet' + '.pth')
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,input_args):
@@ -36,6 +50,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     gaussians = GaussianModel(dataset.sh_degree,max_objects = input_args.max_objects)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
+    colors = [(1, 0, 0), (0, 0, 1), (0, 1, 0), (1, 1, 0), (1, 0.5, 0), 
+          (0.5, 0, 0.5), (0, 0.5, 0.5), (1, 0, 1), (0.5, 0.25, 0), (1, 0.75, 0.8)]
+          
+    color_map = torch.tensor(colors)
     
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -95,7 +113,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         image, viewspace_point_tensor, visibility_filter, radii, decomp_objs = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"],render_pkg["render_object"]
         temp = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects)
 
-        embedding_loss, codebooks, perplexity = gaussians.vqvae_block(temp)
+        embedding_loss, codebooks, perplexity, min_encodings, _, z = gaussians.vqvae_block(temp)
+
+        
+
+        if iteration > 6500:
+            import pdb
+            pdb.set_trace()
+            expanded_one_hot_tensor = min_encodings.unsqueeze(2).expand(-1, -1, 3)
+            color_map = color_map.to(device=expanded_one_hot_tensor.device)
+            color_tensor = expanded_one_hot_tensor * color_map
+            color_tensor = color_tensor.sum(dim=1)
+            color_tensor = (255 * color_tensor).type(torch.uint8).cpu()
+            color_tensor = color_tensor.reshape([image.shape[1], image.shape[2], 3])
+            zz = cv2.imwrite("test.png", np.array(color_tensor.detach()))
+
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
@@ -110,10 +142,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # decomp_objs = torch.sigmoid(decomp_objs)
             # temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
 
-            decomposition_loss = ae_loss(codebooks, temp_gt_mask)# ae loss
-            print("\ndecomposition loss --------------------------------------------------------------")
-            print(decomposition_loss)
+            decomposition_loss = ae_loss(z, temp_gt_mask)# ae loss
             #decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)# DM-Nerf Loss
+
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss + embedding_loss
         else:
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
@@ -136,6 +167,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
                 
+                save_model_and_results(gaussians.vqvae_block)
+
                 if(input_args.save_decomp):
                     print("\n[ITER {}] Saving decomposed Gaussians".format(iteration))
                     scene.save_decomp(iteration)
@@ -163,6 +196,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+                torch.save()
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
