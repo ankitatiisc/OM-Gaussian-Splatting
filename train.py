@@ -9,10 +9,12 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import cv2
+import numpy as np
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+from utils.loss_utils import l1_loss, ssim ,decomp_loss,ae_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -22,24 +24,45 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+
+def save_model_and_results(model):
+    SAVE_MODEL_PATH = '/data/srinath/nips24/OM-Gaussian-Splatting/save_model'
+
+    results_to_save = {
+        'model': model.state_dict(),
+    }
+    torch.save(results_to_save,
+               SAVE_MODEL_PATH + '/vqvae_scannet' + '.pth')
+
+
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,input_args):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
-    gaussians = GaussianModel(dataset.sh_degree)
+    gaussians = GaussianModel(dataset.sh_degree,max_objects = input_args.max_objects)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
+    colors = [(1, 0, 0), (0, 0, 1), (0, 1, 0), (1, 1, 0), (1, 0.5, 0), 
+          (0.5, 0, 0.5), (0, 0.5, 0.5), (1, 0, 1), (0.5, 0.25, 0), (1, 0.75, 0.8)]
+          
+    color_map = torch.tensor(colors)
+    
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+
 
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
@@ -48,6 +71,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+    gaussians.vqvae_block.train()
     for iteration in range(first_iter, opt.iterations + 1):        
         if network_gui.conn == None:
             network_gui.try_connect()
@@ -83,13 +107,47 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg) 
+        
+        image, viewspace_point_tensor, visibility_filter, radii, decomp_objs = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"],render_pkg["render_object"]
+        temp = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects)
+
+        embedding_loss, codebooks, perplexity, min_encodings, _, z = gaussians.vqvae_block(temp)
+
+        
+
+        if iteration > 6500:
+            import pdb
+            pdb.set_trace()
+            expanded_one_hot_tensor = min_encodings.unsqueeze(2).expand(-1, -1, 3)
+            color_map = color_map.to(device=expanded_one_hot_tensor.device)
+            color_tensor = expanded_one_hot_tensor * color_map
+            color_tensor = color_tensor.sum(dim=1)
+            color_tensor = (255 * color_tensor).type(torch.uint8).cpu()
+            color_tensor = color_tensor.reshape([image.shape[1], image.shape[2], 3])
+            zz = cv2.imwrite("test.png", np.array(color_tensor.detach()))
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        
+        gt_mask = viewpoint_cam.original_mask
+        # if(iteration>3000):## for now check here if weigths are updating or not. 
+        #     import pdb;pdb.set_trace()
+        if gt_mask is not None:
+    
+            gt_mask = gt_mask.cuda()
+            temp_gt_mask = gt_mask.view(-1) # shape [H*W]     
+            # decomp_objs = torch.sigmoid(decomp_objs)
+            # temp_pred_mask = decomp_objs.permute(1,2,0).view(-1,input_args.max_objects) # shape [H*W,O]
+
+            decomposition_loss = ae_loss(z, temp_gt_mask)# ae loss
+            #decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)# DM-Nerf Loss
+
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss + embedding_loss
+        else:
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         loss.backward()
 
         iter_end.record()
@@ -108,6 +166,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
+                
+                save_model_and_results(gaussians.vqvae_block)
+
+                if(input_args.save_decomp):
+                    print("\n[ITER {}] Saving decomposed Gaussians".format(iteration))
+                    scene.save_decomp(iteration)
 
             # Densification
             if iteration < opt.densify_until_iter:
@@ -126,10 +190,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
+                gaussians.optimizer_vqvae.step()
+                gaussians.optimizer_vqvae.zero_grad(set_to_none = True)
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+                torch.save()
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -201,22 +268,25 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000,60_000,90_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument('--decomp', action='store_true', default=False)
+    parser.add_argument('--max_objects', type=int, default=50)
+    parser.add_argument('--save_decomp',action='store_true',default=False)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
-    print("Optimizing " + args.model_path)
-
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
     # Start GUI server, configure and run training
-    network_gui.init(args.ip, args.port)
-    torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    # network_gui.init(args.ip, args.port)
+    # torch.autograd.set_detect_anomaly(args.detect_anomaly)
+    # print("Optimizing " + args.model_path)
+    
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from,args)
 
     # All done
     print("\nTraining complete.")
