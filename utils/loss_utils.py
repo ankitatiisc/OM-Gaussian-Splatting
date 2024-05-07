@@ -182,39 +182,39 @@ def ae_loss(features, instance_labels,valid_instances,gaussians,iteration, sigma
     # push_loss_1 = torch.exp(-2*torch.pow(features-0.5,2).sum(dim=-1)).mean()
     
     
-    # 3D loss
-    if(iteration>15000):
-        with torch.no_grad():
-            gaussian_means = gaussians.get_xyz
-        gaussian_features = gaussians.get_object_ins
-        x1 = torch.randperm(gaussian_means.shape[0])[:int(2000)]
-        gaussian_means=  gaussian_means[x1]
-        gaussian_features = gaussian_features[x1]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
-        # import pdb;pdb.set_trace()
-        # import pdb;pdb.set_trace()
-        mean_dis = torch.pow(gaussian_means.unsqueeze(1) - gaussian_means.unsqueeze(0), 2).sum(dim=-1)
-        features_dis = torch.pow(gaussian_features.unsqueeze(1) - gaussian_features.unsqueeze(0), 2).sum(dim=-1)
-        mean_dis = (mean_dis/mean_dis.max()) + 0.0001
-        features_dis = ((features_dis/features_dis.max()) + 0.0001).view(mean_dis.shape)
-        loss_3d = torch.abs(torch.log(features_dis/mean_dis)).mean()
-        # return pull_loss + 2*push_loss + loss_3d*0.1
-    # import pdb;pdb.set_trace()
+    # # 3D loss
+    # if(iteration>15000):
+    #     with torch.no_grad():
+    #         gaussian_means = gaussians.get_xyz
+    #     gaussian_features = gaussians.get_object_ins
+    #     x1 = torch.randperm(gaussian_means.shape[0])[:int(2000)]
+    #     gaussian_means=  gaussian_means[x1]
+    #     gaussian_features = gaussian_features[x1]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
+    #     # import pdb;pdb.set_trace()
+    #     # import pdb;pdb.set_trace()
+    #     mean_dis = torch.pow(gaussian_means.unsqueeze(1) - gaussian_means.unsqueeze(0), 2).sum(dim=-1)
+    #     features_dis = torch.pow(gaussian_features.unsqueeze(1) - gaussian_features.unsqueeze(0), 2).sum(dim=-1)
+    #     mean_dis = (mean_dis/mean_dis.max()) + 0.0001
+    #     features_dis = ((features_dis/features_dis.max()) + 0.0001).view(mean_dis.shape)
+    #     loss_3d = torch.abs(torch.log(features_dis/mean_dis)).mean()
+    #     return 2*(0.01+(iteration/80000.0))*pull_loss + 2*(1.01-(iteration/80000.0))*push_loss + loss_3d*0.1
+    # # import pdb;pdb.set_trace()
             
-    #Triplet Loss
-    # import pdb;pdb.set_trace()
+    # #Triplet Loss
+    # # import pdb;pdb.set_trace()
     if((iteration>15000) ):
         full_distances = torch.pow(features - centroids[inverse_indices], 2).sum(dim=-1)
         mean_distances = full_distances.mean()
-        indices = full_distances>mean_distances
+        indices = full_distances>mean_distances*3
         anchors = features[indices]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
         positive_indices = valid_instances>0.9
         positives = centroids[inverse_indices][indices]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
         negative_indices =  (inverse_indices+torch.randint(1,unique_instances.shape[0] , size=(features.shape[0],)).to(inverse_indices.device))%unique_instances.shape[0]
         negatives = centroids[negative_indices][indices]@mlp_weights.to(features.device) + mlp_bias.to(features.device)
         riplet_loss_1 = triplet_loss(anchors,positives,negatives)
-        return riplet_loss_1*0.2 +pull_loss + 2*push_loss + loss_3d*0.2
+        return riplet_loss_1*0.1 + 2*(0.01+(iteration/80000.0))*pull_loss + 2*(1.01-(iteration/80000.0))*push_loss
     
     
-    return pull_loss + 2*push_loss 
+    return 2*(0.01+(iteration/80000.0))*pull_loss + 2*(1.01-(iteration/80000.0))*push_loss 
 
 
