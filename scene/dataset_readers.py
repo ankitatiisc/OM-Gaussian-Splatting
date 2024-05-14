@@ -11,6 +11,7 @@
 
 import os
 import sys
+import imageio
 from PIL import Image
 from typing import NamedTuple
 from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec2rotmat, \
@@ -87,6 +88,7 @@ class CameraInfo(NamedTuple):
     invalid_flag:bool
     width: int
     height: int
+    depth: np.array
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -148,6 +150,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder,dataset_name
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
+        depth_path = os.path.join(images_folder.replace("images", "depth"), os.path.basename(extr.name.replace(".jpg", ".png")))
         
         mask_path  = ''
         mask       = None
@@ -172,7 +175,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder,dataset_name
             
         image_name = os.path.basename(image_path).split(".")[0]
         if(os.path.isfile(image_path)):
-            image      = Image.open(image_path)
+            image= Image.open(image_path)
+            depth = Image.open(depth_path)
             if os.path.isfile(mask_path):
                 if dataset_name =='messy_room':
                     mask = np.load(mask_path)
@@ -182,7 +186,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder,dataset_name
                     mask = Image.open(mask_path)
                     # import pdb;pdb.set_trace()
                 mask_flag = True
-            # import pdb;pdb.set_trace()
+
             
             if os.path.isfile(invalid_path):
                 if dataset_name =='messy_room':
@@ -199,7 +203,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder,dataset_name
         
         
             cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                                image_path=image_path,mask = mask,mask_path = mask_path,invalid_img= invalid_img,invalid_path = invalid_path, image_name=image_name,mask_flag=mask_flag,invalid_flag= invalid_flag, width=width, height=height)
+                                image_path=image_path,mask = mask,mask_path = mask_path,invalid_img= invalid_img,invalid_path = invalid_path, image_name=image_name,mask_flag=mask_flag,invalid_flag= invalid_flag, width=width, height=height, depth=depth)
             cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
@@ -312,6 +316,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background,dataset_nam
     
         for idx, frame in enumerate(frames):
             cam_name = os.path.join(path, frame["file_path"] + extension)
+            depth_name = os.path.join(path, frame["file_path"] + "_depth0000" + '.exr')
             mask_flag =True
             mask_path =''
             if(dataset_name == 'dmnerf'):

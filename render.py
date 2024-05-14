@@ -109,6 +109,7 @@ def images_to_video(image_folder, video_name, fps=20):
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background,dataset_path):
     render_path = os.path.join(model_path, name, f'ours_{iteration}',"renders")
     gts_path = os.path.join(model_path, name, f'ours_{iteration}', "gt")
+    depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth")
     mask_path = os.path.join(model_path, name, f'ours_{iteration}', "mask")
     mask_instance_path_img = os.path.join(model_path, name, f'ours_{iteration}', "instancs_bw")
     mask_instance_path_1 = os.path.join(model_path, name, f'ours_{iteration}', "pred_semantics_org")
@@ -116,6 +117,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     video_path = os.path.join(model_path,'rendered_videos',f'ours_{iteration}')
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
+    makedirs(depth_path, exist_ok=True)
     makedirs(mask_path, exist_ok=True)
     makedirs(video_path, exist_ok=True)
     makedirs(mask_instance_path_1, exist_ok=True)
@@ -125,6 +127,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         render_output = render(view, gaussians, pipeline, background)
         rendering = render_output["render"]
+        depth = render_output["depth"]
+        depth = depth / (depth.max() + 1e-5)
         rendered_object = render_output['render_object'] # shape [O,H,W] O-no of objects
         rendered_object = rendered_object.permute(1,2,0).view(-1,12)
         
@@ -156,6 +160,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         try:
             torchvision.utils.save_image(rendering, os.path.join(render_path,view.image_name + ".png"))
             torchvision.utils.save_image(gt, os.path.join(gts_path,view.image_name + ".png"))
+            torchvision.utils.save_image(depth, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
             cv2.imwrite(os.path.join(mask_path,view.image_name + ".png"),dummy_rendered_object)
             cv2.imwrite(os.path.join(mask_instance_path_img,view.image_name + ".png"),np.array(img,dtype=np.int32)*255)
             np.save(os.path.join(mask_instance_path_1,view.image_name + ".npy"),dummy_image_instance)
@@ -163,6 +168,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         except:
             torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
             torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+            torchvision.utils.save_image(depth, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
             cv2.imwrite(os.path.join(mask_path, '{0:05d}'.format(idx) + ".png"),dummy_rendered_object)
             cv2.imwrite(os.path.join(mask_instance_path_img, '{0:05d}'.format(idx) + ".png"),np.array(img,dtype=np.int32)*255)
             np.save(os.path.join(mask_instance_path_1, '{0:05d}'.format(idx) + ".npy"),dummy_image_instance)

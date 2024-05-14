@@ -80,6 +80,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+        gt_depth = viewpoint_cam.depth
 
         # Render
         if (iteration - 1) == debug_from:
@@ -90,12 +91,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg) 
         image, viewspace_point_tensor, visibility_filter, radii,decomp_objs = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"],render_pkg["render_object"]
+        depth = render_pkg["depth"]
         
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         
         gt_mask = viewpoint_cam.original_mask
+
+        depth_loss = l1_loss(depth, gt_depth) * 0.1
         # import pdb;pdb.set_trace()
         if (gt_mask is not None):
             gt_mask = gt_mask.to()
@@ -107,9 +111,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
             decomposition_loss = ae_loss(temp_pred_mask,temp_gt_mask,temp_gt_invalid,gaussians,iteration)# ae loss
             #decomposition_loss = decomp_loss(temp_pred_mask,temp_gt_mask,input_args.max_objects)# DM-Nerf Loss
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))+ decomposition_loss + depth_loss
         else:
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + depth_loss
         # import pdb;pdb.set_trace()
         loss.backward()
 

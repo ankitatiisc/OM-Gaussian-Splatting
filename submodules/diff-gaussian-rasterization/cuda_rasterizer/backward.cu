@@ -404,10 +404,12 @@ renderCUDA(
 	const float2* __restrict__ points_xy_image,
 	const float4* __restrict__ conic_opacity,
 	const float* __restrict__ colors,
+	const float* __restrict__ depths,
 	const float* __restrict__ objects,
 	const float* __restrict__ final_Ts,
 	const uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ dL_dpixels,
+	const float* __restrict__ dL_depths,
 	const float* __restrict__ dL_dpixels_objs,
 	float3* __restrict__ dL_dmean2D,
 	float4* __restrict__ dL_dconic2D,
@@ -437,6 +439,7 @@ renderCUDA(
 	__shared__ float4 collected_conic_opacity[BLOCK_SIZE];
 	__shared__ float collected_colors[C * BLOCK_SIZE];
 	__shared__ float collected_objects[O * BLOCK_SIZE];
+	__shared__ float collected_depths[BLOCK_SIZE];
 
 	// In the forward, we stored the final value for T, the
 	// product of all (1 - alpha) factors. 
@@ -452,13 +455,18 @@ renderCUDA(
 	float accum_rec_obj[O] = { 0 };
 	float dL_dpixel[C];
 	float dL_dpixel_obj[O];
-	if (inside)
+	float dL_depth;
+	float accum_depth_rec = 0;
+	if (inside){
 		for (int i = 0; i < C; i++)
 			dL_dpixel[i] = dL_dpixels[i * H * W + pix_id];
+			dL_depth = dL_depths[pix_id];
 		for (int i = 0; i < O; i++)
 			dL_dpixel_obj[i] = dL_dpixels_objs[i * H * W + pix_id];
+	}
 
 	float last_alpha = 0;
+	float last_depth = 0;
 	float last_color[C] = { 0 };
 	float last_object[O] = { 0 };
 
@@ -482,8 +490,10 @@ renderCUDA(
 			collected_conic_opacity[block.thread_rank()] = conic_opacity[coll_id];
 			for (int i = 0; i < C; i++)
 				collected_colors[i * BLOCK_SIZE + block.thread_rank()] = colors[coll_id * C + i];
+				collected_depths[block.thread_rank()] = depths[coll_id];
 			for (int i = 0; i < O; i++)
 				collected_objects[i * BLOCK_SIZE + block.thread_rank()] = objects[coll_id * O + i];
+				
 		}
 		block.sync();
 
@@ -544,6 +554,10 @@ renderCUDA(
 				atomicAdd(&(dL_dobjects[global_id * O + ch]), dchannel_dcolor * dL_dchannel_obj);
 			}
 			// cout<<;
+			const float c_d = collected_depths[j];
+			accum_depth_rec = last_alpha * last_depth + (1.f - last_alpha) * accum_depth_rec;
+			last_depth = c_d;
+			dL_dalpha += (c_d - accum_depth_rec) * dL_depth;
 			dL_dalpha *= T;
 			// Update last alpha (to be used in the next iteration)
 			last_alpha = alpha;
@@ -652,10 +666,12 @@ void BACKWARD::render(
 	const float2* means2D,
 	const float4* conic_opacity,
 	const float* colors,
+	const float* depths,
 	const float* objects,
 	const float* final_Ts,
 	const uint32_t* n_contrib,
 	const float* dL_dpixels,
+	const float* dL_depths,
 	const float* dL_dpixels_objs,
 	float3* dL_dmean2D,
 	float4* dL_dconic2D,
@@ -671,10 +687,12 @@ void BACKWARD::render(
 		means2D,
 		conic_opacity,
 		colors,
+		depths,
 		objects,
 		final_Ts,
 		n_contrib,
 		dL_dpixels,
+		dL_depths,
 		dL_dpixels_objs,
 		dL_dmean2D,
 		dL_dconic2D,
