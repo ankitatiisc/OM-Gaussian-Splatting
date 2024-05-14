@@ -549,7 +549,7 @@ renderCUDA(
 				last_object[ch] = o;
 
 				const float dL_dchannel_obj = dL_dpixel_obj[ch];
-				// dL_dalpha += (o - accum_rec_obj[ch]) * dL_dchannel_obj;
+				dL_dalpha += (o - accum_rec_obj[ch]) * dL_dchannel_obj;
 
 				atomicAdd(&(dL_dobjects[global_id * O + ch]), dchannel_dcolor * dL_dchannel_obj);
 			}

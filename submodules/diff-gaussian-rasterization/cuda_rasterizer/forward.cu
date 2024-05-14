@@ -272,7 +272,7 @@ renderCUDA(
 	uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
-	float* __restrict__ out_depth),
+	float* __restrict__ out_depth,
 	float* __restrict__ out_objects)
 {
 	// Identify current tile and associated min/max pixel range.
