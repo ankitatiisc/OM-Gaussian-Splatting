@@ -21,8 +21,8 @@ from torch_scatter import scatter_mean
 triplet_loss = nn.TripletMarginLoss(margin=1, p=2, eps=1e-7)
 # info_nceloss = InfoNCE(negative_mode='paired')
 
-mlp_weights  = torch.from_numpy(np.load('/data/jaswanth/OM-Gaussian-Splatting-org/weights.npy'))
-mlp_bias = torch.from_numpy(np.load('/data/jaswanth/OM-Gaussian-Splatting-org/bias.npy'))
+mlp_weights  = torch.from_numpy(np.load('/data/jaswanth/weights.npy'))
+mlp_bias = torch.from_numpy(np.load('/data/jaswanth/bias.npy'))
 def create_embedding_fn(input_X,
                         input_dims = 2,
                         include_input = False,

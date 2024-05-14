@@ -40,7 +40,7 @@ def loadCam(args, id, cam_info, resolution_scale):
 
     resized_image_rgb = PILtoTorch(cam_info.image, resolution)
     if cam_info.depth is not None:
-        resized_depth_rgb = ArrayToTorch(cam_info.depth, resolution)
+        resized_depth_rgb = PILtoTorch(cam_info.depth, resolution)
     else:
         resized_depth_rgb = None
 
