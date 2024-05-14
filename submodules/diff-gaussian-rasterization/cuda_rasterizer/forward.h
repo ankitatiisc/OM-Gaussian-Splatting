@@ -54,12 +54,14 @@ namespace FORWARD
 		int W, int H,
 		const float2* points_xy_image,
 		const float* features,
+		const float* depths,
 		const float* obj_features,
 		const float4* conic_opacity,
 		float* final_T,
 		uint32_t* n_contrib,
 		const float* bg_color,
 		float* out_color,
+		float* out_depth,
 		float* out_objects);
 }
 

@@ -265,12 +265,14 @@ renderCUDA(
 	int W, int H,
 	const float2* __restrict__ points_xy_image,
 	const float* __restrict__ features,
+	const float* __restrict__ depths,
 	const float* __restrict__ obj_features,
 	const float4* __restrict__ conic_opacity,
 	float* __restrict__ final_T,
 	uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
+	float* __restrict__ out_depth),
 	float* __restrict__ out_objects)
 {
 	// Identify current tile and associated min/max pixel range.
@@ -302,6 +304,7 @@ renderCUDA(
 	uint32_t contributor = 0;
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
+	float D = { 0 };
 	float O[OBJECTS] = { 0 };	//rendered object
 
 	// Iterate over batches until all done or range is complete
@@ -355,6 +358,7 @@ renderCUDA(
 			// Eq. (3) from 3D Gaussian splatting paper.
 			for (int ch = 0; ch < CHANNELS; ch++){
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;}
+				D += depths[collected_id[j]] * alpha * T;
 			for (int ch = 0; ch < OBJECTS; ch++){
 				O[ch] += obj_features[collected_id[j] * OBJECTS + ch] * alpha * T;}
 
@@ -374,6 +378,7 @@ renderCUDA(
 		n_contrib[pix_id] = last_contributor;
 		for (int ch = 0; ch < CHANNELS; ch++){
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];}
+			out_depth[pix_id] = D;
 		for (int ch = 0; ch < OBJECTS; ch++){
 			out_objects[ch * H * W + pix_id] = O[ch];}
 		
@@ -387,12 +392,14 @@ void FORWARD::render(
 	int W, int H,
 	const float2* means2D,
 	const float* colors,
+	const float* depths,
 	const float* objects,
 	const float4* conic_opacity,
 	float* final_T,
 	uint32_t* n_contrib,
 	const float* bg_color,
 	float* out_color,
+	float* out_depth,
 	float* out_objects)
 {
 	renderCUDA<NUM_CHANNELS, NUM_OBJECTS> << <grid, block >> > (
@@ -401,12 +408,14 @@ void FORWARD::render(
 		W, H,
 		means2D,
 		colors,
+		depths,
 		objects,
 		conic_opacity,
 		final_T,
 		n_contrib,
 		bg_color,
 		out_color,
+		out_depth,
 		out_objects);
 }
 

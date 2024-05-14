@@ -215,6 +215,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const float tan_fovx, float tan_fovy,
 	const bool prefiltered,
 	float* out_color,
+	float* out_depth,
 	float* out_objects,
 	int* radii,
 	bool debug)
@@ -327,12 +328,14 @@ int CudaRasterizer::Rasterizer::forward(
 		width, height,
 		geomState.means2D,
 		feature_ptr,
+		geomState.depths,
 		sh_objs,
 		geomState.conic_opacity,
 		imgState.accum_alpha,
 		imgState.n_contrib,
 		background,
 		out_color,
+		out_depth,
 		out_objects), debug)
 
 	return num_rendered;
@@ -361,6 +364,7 @@ void CudaRasterizer::Rasterizer::backward(
 	char* binning_buffer,
 	char* img_buffer,
 	const float* dL_dpix,
+	const float* dL_depths,
 	const float* dL_dpix_obj,
 	float* dL_dmean2D,
 	float* dL_dconic,
@@ -393,6 +397,7 @@ void CudaRasterizer::Rasterizer::backward(
 	// opacity and RGB of Gaussians from per-pixel loss gradients.
 	// If we were given precomputed colors and not SHs, use them.
 	const float* color_ptr = (colors_precomp != nullptr) ? colors_precomp : geomState.rgb;
+	const float* depth_ptr = geomState.depths;
 	const float* obj_ptr = sh_objs;
 	CHECK_CUDA(BACKWARD::render(
 		tile_grid,
@@ -404,10 +409,12 @@ void CudaRasterizer::Rasterizer::backward(
 		geomState.means2D,
 		geomState.conic_opacity,
 		color_ptr,
+		depth_ptr,
 		obj_ptr,
 		imgState.accum_alpha,
 		imgState.n_contrib,
 		dL_dpix,
+		dL_depths,
 		dL_dpix_obj,
 		(float3*)dL_dmean2D,
 		(float4*)dL_dconic,

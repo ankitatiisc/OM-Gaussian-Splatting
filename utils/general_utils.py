@@ -39,6 +39,17 @@ def PILtoTorch(pil_image, resolution):
         return resized_image.permute(2, 0, 1)
     else:
         return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
+
+
+def ArrayToTorch(array, resolution):
+    # resized_image = np.resize(array, resolution)
+    resized_image_torch = torch.from_numpy(array)
+
+    if len(resized_image_torch.shape) == 3:
+        return resized_image_torch.permute(2, 0, 1)
+    else:
+        return resized_image_torch.unsqueeze(dim=-1).permute(2, 0, 1)
+        
 def PILtoTorchformask(pil_image, resolution):
     resized_image_PIL = pil_image.resize(resolution)
     resized_image = torch.from_numpy(np.array(resized_image_PIL)) 
